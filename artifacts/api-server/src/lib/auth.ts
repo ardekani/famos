@@ -2,7 +2,8 @@
  * Supabase JWT auth middleware for Express.
  *
  * Verifies the Authorization: Bearer <token> header against Supabase Auth,
- * then sets req.userId so downstream route handlers can trust it.
+ * then sets req.userId and req.userEmail so downstream route handlers can
+ * trust both values without accepting them from untrusted request bodies.
  *
  * Returns 401 if the token is missing, invalid, or expired.
  */
@@ -10,6 +11,16 @@
 import type { Request, Response, NextFunction } from "express";
 import { getSupabaseClient } from "./supabase.js";
 import { logger } from "./logger.js";
+
+// Augment Express Request so TypeScript knows about our custom fields.
+declare global {
+  namespace Express {
+    interface Request {
+      userId:    string;
+      userEmail: string | undefined;
+    }
+  }
+}
 
 export async function requireAuth(
   req: Request,
@@ -35,7 +46,9 @@ export async function requireAuth(
       return;
     }
 
-    req.userId = user.id;
+    // Both values come from the verified Supabase token — never from req.body.
+    req.userId    = user.id;
+    req.userEmail = user.email ?? undefined;
     next();
   } catch (err) {
     logger.error({ err }, "Auth middleware threw");

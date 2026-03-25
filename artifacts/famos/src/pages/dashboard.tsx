@@ -601,7 +601,9 @@ interface DigestJson {
 
 function DigestCard({ userId }: { userId: string }) {
   const queryClient = useQueryClient();
+  const { user }    = useAuth();
   const [expanded, setExpanded] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
 
   const { data: digest, isLoading } = useQuery({
     queryKey:  ["digest", userId],
@@ -609,20 +611,43 @@ function DigestCard({ userId }: { userId: string }) {
     staleTime: 60_000,
   });
 
+  // ── Generate ──────────────────────────────────────────────
   const generateMutation = useMutation({
     mutationFn: async () => {
       const today = new Date().toISOString().split("T")[0];
       const res   = await apiFetch("/api/digest/generate", {
-        method:  "POST",
-        body:    JSON.stringify({ date: today }),
+        method: "POST",
+        body:   JSON.stringify({ date: today }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error ?? "Generation failed");
       }
-      return res.json() as Promise<{ content_text: string; content_json: DigestJson; created_at: string }>;
+      return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["digest", userId] }),
+    onSuccess: () => {
+      setSendSuccess(false);
+      queryClient.invalidateQueries({ queryKey: ["digest", userId] });
+    },
+  });
+
+  // ── Send ──────────────────────────────────────────────────
+  // No email is passed in the body — the server reads it from the
+  // verified Supabase token (req.userEmail), so only the authenticated
+  // user's email is ever used.
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch("/api/digest/send", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Send failed");
+      }
+      return res.json() as Promise<{ ok: boolean; sent_to: string }>;
+    },
+    onSuccess: () => {
+      setSendSuccess(true);
+      queryClient.invalidateQueries({ queryKey: ["digest", userId] });
+    },
   });
 
   const relativeTime = (iso: string) => {
@@ -637,11 +662,16 @@ function DigestCard({ userId }: { userId: string }) {
 
   const json = digest?.content_json as unknown as DigestJson | null;
 
+  // True if today's digest was already generated (digest_date matches today)
+  const today          = new Date().toISOString().split("T")[0];
+  const isToday        = digest?.digest_date === today;
+  const alreadySentToday = digest?.sent_at && isToday;
+
   return (
     <div className="mb-8 rounded-xl border border-border bg-card shadow-xs">
       {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <FileText className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold text-foreground">Daily Digest</span>
           {digest && json && (
@@ -656,9 +686,29 @@ function DigestCard({ userId }: { userId: string }) {
               {relativeTime(digest.created_at)}
             </span>
           )}
+          {alreadySentToday && (
+            <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+              <Send className="h-2.5 w-2.5" />
+              Sent today
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Send to my email */}
+          {digest && !alreadySentToday && (
+            <button
+              onClick={() => sendMutation.mutate()}
+              disabled={sendMutation.isPending || generateMutation.isPending}
+              title={`Send to ${user?.email ?? "your email"}`}
+              className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sendMutation.isPending
+                ? <><Loader2 className="h-3 w-3 animate-spin" />Sending…</>
+                : <><Send className="h-3 w-3" />Email me</>}
+            </button>
+          )}
+
           {/* Generate / Regenerate */}
           <button
             onClick={() => generateMutation.mutate()}
@@ -683,7 +733,16 @@ function DigestCard({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Error */}
+      {/* Scheduling note — honest about automation not being live */}
+      <div className="border-t border-border/60 bg-muted/20 px-4 py-2">
+        <p className="text-[11px] text-muted-foreground">
+          Automated daily delivery is not yet active — generate your digest manually and
+          click <strong>Email me</strong> to send it to{" "}
+          <span className="font-medium">{user?.email ?? "your email"}</span>.
+        </p>
+      </div>
+
+      {/* Errors */}
       {generateMutation.isError && (
         <div className="border-t border-red-100 bg-red-50 px-4 py-2">
           <p className="text-xs text-red-700">
@@ -691,11 +750,27 @@ function DigestCard({ userId }: { userId: string }) {
           </p>
         </div>
       )}
+      {sendMutation.isError && (
+        <div className="border-t border-red-100 bg-red-50 px-4 py-2">
+          <p className="text-xs text-red-700">
+            {sendMutation.error instanceof Error ? sendMutation.error.message : "Send failed"}
+          </p>
+        </div>
+      )}
+
+      {/* Send success toast */}
+      {sendSuccess && (
+        <div className="border-t border-green-100 bg-green-50 px-4 py-2">
+          <p className="text-xs font-medium text-green-800">
+            Digest sent to {user?.email} — check your inbox.
+          </p>
+        </div>
+      )}
 
       {/* No digest yet */}
       {!isLoading && !digest && !generateMutation.isPending && (
-        <p className="border-t border-border px-4 py-3 text-xs italic text-muted-foreground">
-          No digest generated yet — click Generate to create one from your current data.
+        <p className="px-4 py-3 text-xs italic text-muted-foreground">
+          No digest yet — click Generate to build one from your current data.
         </p>
       )}
 
@@ -705,12 +780,6 @@ function DigestCard({ userId }: { userId: string }) {
           <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-muted-foreground">
             {digest.content_text}
           </pre>
-          {digest.sent_at && (
-            <p className="mt-3 flex items-center gap-1 text-[11px] text-green-700">
-              <Send className="h-3 w-3" />
-              Sent {relativeTime(digest.sent_at)}
-            </p>
-          )}
         </div>
       )}
     </div>
