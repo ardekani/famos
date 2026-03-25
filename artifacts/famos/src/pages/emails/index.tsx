@@ -16,8 +16,11 @@ import {
   CheckCircle2,
   Clock,
   Inbox,
+  Users,
+  FlaskConical,
+  Settings,
 } from "lucide-react";
-import { getEmails } from "@/lib/queries";
+import { getEmails, getChildren } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
 import type { Email } from "@/types/database";
 
@@ -147,26 +150,48 @@ function ListSkeleton() {
 
 // ── Empty state ───────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ hasChildren }: { hasChildren: boolean }) {
+  if (!hasChildren) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
+        <Users className="mb-4 h-10 w-10 text-muted-foreground/30" />
+        <p className="text-sm font-semibold text-foreground">Start with your children</p>
+        <p className="mt-1.5 text-sm text-muted-foreground/80 max-w-sm">
+          Add your kids first so FamOS can link emails to the right child when
+          events and deadlines are extracted.
+        </p>
+        <Link
+          href="/children"
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          Add your children
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
       <Inbox className="mb-4 h-10 w-10 text-muted-foreground/30" />
-      <p className="text-sm font-medium text-muted-foreground">No emails yet</p>
-      <p className="mt-1 text-sm text-muted-foreground/70">
-        Forward a school email to your FamOS inbox to get started.
+      <p className="text-sm font-semibold text-foreground">No emails yet</p>
+      <p className="mt-1.5 text-sm text-muted-foreground/80 max-w-sm">
+        Paste a school email to try FamOS instantly, or set up forwarding so
+        emails flow in automatically.
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-3">
         <Link
-          href="/setup/gmail-forwarding"
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          href="/dev/test-email"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
-          Set up Gmail forwarding
+          <FlaskConical className="h-4 w-4" />
+          Try it with a school email
         </Link>
         <Link
-          href="/dev/test-email"
-          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          href="/setup/gmail-forwarding"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
         >
-          Try a sample email
+          <Settings className="h-4 w-4" />
+          Set up Gmail forwarding
         </Link>
       </div>
     </div>
@@ -185,6 +210,13 @@ export default function EmailsPage() {
     staleTime:   30_000,
     refetchInterval: 15_000,
   });
+
+  const { data: children = [] } = useQuery({
+    queryKey: ["children", userId],
+    queryFn:  () => getChildren(userId),
+    staleTime: 60_000,
+  });
+  const hasChildren = children.length > 0;
 
   return (
     <Shell>
@@ -216,7 +248,7 @@ export default function EmailsPage() {
           {emails.length > 0 && <StatsBar emails={emails} />}
 
           {emails.length === 0 ? (
-            <EmptyState />
+            <EmptyState hasChildren={hasChildren} />
           ) : (
             <div className="space-y-2">
               {emails.map((email) => (

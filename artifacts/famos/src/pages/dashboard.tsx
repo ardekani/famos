@@ -36,6 +36,7 @@ import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 import type { EventWithChild, Deadline, ActionItemWithChild, Email, Digest } from "@/types/database";
 import { Link } from "wouter";
+import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
 
 // ── Date utilities ────────────────────────────────────────────────────────
 
@@ -732,7 +733,7 @@ export default function DashboardPage() {
     retry:       1,
   });
 
-  const { data: children = [] } = useQuery({
+  const { data: children = [], isLoading: childrenLoading } = useQuery({
     queryKey: ["children", userId],
     queryFn:  () => getChildren(userId),
     staleTime: 60_000,
@@ -787,25 +788,12 @@ export default function DashboardPage() {
       {/* ── Daily Digest ── */}
       <DigestCard userId={userId} />
 
-      {/* ── No children nudge ── */}
-      {children.length === 0 && (
-        <div className="mb-8 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
-          <div>
-            <p className="text-sm font-semibold text-amber-900">
-              Set up your children's names
-            </p>
-            <p className="mt-0.5 text-xs text-amber-700">
-              Add your kids so FamOS can match emails to the right child automatically.
-            </p>
-          </div>
-          <Link
-            href="/children"
-            className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-          >
-            Add children →
-          </Link>
-        </div>
-      )}
+      {/* ── Onboarding banner ── */}
+      <OnboardingBanner
+        hasChildren={children.length > 0}
+        hasEmails={(data?.recentEmails.length ?? 0) > 0}
+        loading={isLoading || childrenLoading}
+      />
 
       {/* ── Error state ── */}
       {error && (
@@ -841,20 +829,6 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── Forwarding nudge (only if no emails) ── */}
-      {data && data.recentEmails.length === 0 && (
-        <div className="rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            Forward school emails to FamOS and they'll show up here automatically.{" "}
-            <Link
-              href="/setup/gmail-forwarding"
-              className="text-primary underline-offset-4 hover:underline"
-            >
-              Set up Gmail forwarding →
-            </Link>
-          </p>
-        </div>
-      )}
     </Shell>
   );
 }
