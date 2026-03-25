@@ -65,9 +65,10 @@ export async function getEmails(userId: string, limit = 20): Promise<Email[]> {
   return data ?? [];
 }
 
-/** Fetch a single email with all its extracted items */
+/** Fetch a single email with all its extracted items, scoped to the owner */
 export async function getEmailWithExtractions(
-  emailId: string
+  emailId: string,
+  userId: string
 ): Promise<EmailWithExtractions | null> {
   const db = requireClient();
   const { data, error } = await db
@@ -82,6 +83,7 @@ export async function getEmailWithExtractions(
     `
     )
     .eq("id", emailId)
+    .eq("user_id", userId)
     .single();
   if (error) throw error;
   return data as EmailWithExtractions | null;
@@ -95,9 +97,10 @@ export async function insertEmail(email: InsertEmail): Promise<Email> {
   return data as Email;
 }
 
-/** Update email processing status */
+/** Update email processing status, scoped to the owner */
 export async function updateEmailStatus(
   emailId: string,
+  userId: string,
   status: "pending" | "processed" | "failed",
   extractionError?: string
 ): Promise<void> {
@@ -108,7 +111,8 @@ export async function updateEmailStatus(
       processing_status: status,
       extraction_error: extractionError ?? null,
     })
-    .eq("id", emailId);
+    .eq("id", emailId)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -201,13 +205,14 @@ export async function getOpenActionItems(
   );
 }
 
-/** Mark an action item as completed */
-export async function completeActionItem(itemId: string): Promise<void> {
+/** Mark an action item as completed, scoped to the owner */
+export async function completeActionItem(itemId: string, userId: string): Promise<void> {
   const db = requireClient();
   const { error } = await db
     .from("action_items")
     .update({ completed: true })
-    .eq("id", itemId);
+    .eq("id", itemId)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -226,13 +231,14 @@ export async function insertActionItems(
 
 // ── Notes ─────────────────────────────────────────────────────────────────
 
-/** Fetch notes extracted from a specific email */
-export async function getNotesByEmail(emailId: string): Promise<Note[]> {
+/** Fetch notes extracted from a specific email, scoped to the owner */
+export async function getNotesByEmail(emailId: string, userId: string): Promise<Note[]> {
   const db = requireClient();
   const { data, error } = await db
     .from("notes")
     .select("*")
     .eq("source_email_id", emailId)
+    .eq("user_id", userId)
     .order("created_at");
   if (error) throw error;
   return data ?? [];

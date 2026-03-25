@@ -31,6 +31,7 @@ import {
   Check,
 } from "lucide-react";
 import { getEmailWithExtractions, completeActionItem } from "@/lib/queries";
+import { DEV_USER_ID } from "@/lib/supabase";
 import type {
   Event,
   Deadline,
@@ -256,7 +257,7 @@ function ActionItemsCard({ items }: { items: ActionItem[] }) {
   const [done, setDone] = useState<Set<string>>(new Set());
 
   const mutation = useMutation({
-    mutationFn: completeActionItem,
+    mutationFn: (id: string) => completeActionItem(id, DEV_USER_ID),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
   });
 
@@ -422,7 +423,7 @@ export default function EmailDetailPage() {
 
   const { data, isLoading, error } = useQuery({
     queryKey:    ["email", emailId],
-    queryFn:     () => getEmailWithExtractions(emailId),
+    queryFn:     () => getEmailWithExtractions(emailId, DEV_USER_ID),
     enabled:     Boolean(emailId),
     staleTime:   30_000,
   });

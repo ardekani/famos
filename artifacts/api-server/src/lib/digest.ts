@@ -435,15 +435,19 @@ export async function generateDigest(
 
   const contentText = renderText(digestJson);
 
-  // ── Save to digests table ──
+  // ── Save to digests table (upsert so re-generating the same day replaces the old one) ──
   const { data, error } = await sb
     .from("digests")
-    .insert({
-      user_id:      userId,
-      digest_date:  today,
-      content_text: contentText,
-      content_json: digestJson as unknown as Record<string, unknown>,
-    })
+    .upsert(
+      {
+        user_id:      userId,
+        digest_date:  today,
+        content_text: contentText,
+        content_json: digestJson as unknown as Record<string, unknown>,
+        sent_at:      null,
+      },
+      { onConflict: "user_id,digest_date" }
+    )
     .select()
     .single();
 

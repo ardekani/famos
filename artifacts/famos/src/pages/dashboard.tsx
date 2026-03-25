@@ -262,7 +262,7 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
 
   const mutation = useMutation({
-    mutationFn: completeActionItem,
+    mutationFn: (id: string) => completeActionItem(id, DEV_USER_ID),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
