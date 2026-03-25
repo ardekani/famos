@@ -4,6 +4,30 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## FamOS
+
+Family School OS — turns school email chaos into a clear weekly plan.
+A React + Vite + Tailwind CSS web app registered as `@workspace/famos` at `artifacts/famos/`.
+
+### Pages
+- `/` — Landing page with hero copy and CTAs
+- `/dashboard` — This week's events, deadlines, and action items
+- `/emails/:id` — Email detail with extracted events, actions, supplies
+- `/setup/gmail-forwarding` — Step-by-step Gmail forwarding setup
+- `/dev/test-email` — Dev tool: paste email, see mock parsed output
+
+### Client stubs (artifacts/famos/src/lib/)
+- `auth.ts` — Mock auth (MOCK_USER, isAuthenticated) — replace with real auth
+- `supabase.ts` — Supabase client stub (commented out until keys added)
+- `openai.ts` — Usage notes (OpenAI is server-side only in API server)
+- `resend.ts` — Usage notes (Resend is server-side only in API server)
+
+### Environment
+Copy `artifacts/famos/.env.example` to `.env` and fill in:
+- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — Supabase project keys
+- `OPENAI_API_KEY` — Server-side only (in API server)
+- `RESEND_API_KEY` — Server-side only (in API server)
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces

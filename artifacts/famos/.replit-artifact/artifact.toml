@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "FamOS"
+version = "1.0.0"
+id = "artifacts/famos"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24925
+
+[services.development]
+run = "pnpm --filter @workspace/famos run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/famos", "run", "build" ]
+publicDir = "artifacts/famos/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24925"
+BASE_PATH = "/"
