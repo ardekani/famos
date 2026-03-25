@@ -117,11 +117,12 @@ router.post("/emails/extract", requireAuth, async (req: Request, res: Response) 
   // 2. Delete previously extracted entities (scoped to this user)
   await deleteExtractedEntities(email_id, userId);
 
-  // 3. Mark as pending before re-running
+  // 3. Mark as pending before re-running (always scope to userId for defense-in-depth)
   await sb
     .from("emails")
     .update({ processing_status: "pending", extraction_error: null })
-    .eq("id", email_id);
+    .eq("id", email_id)
+    .eq("user_id", userId);
 
   logger.info({ emailId: email_id }, "Re-running extraction");
 

@@ -235,7 +235,7 @@ function SupabaseCheck() {
           {children.length > 0 ? (
             <div className="mt-2">
               <p className="text-xs text-muted-foreground mb-1">
-                Children for dev user ({children.length}):
+                Children for your account ({children.length}):
               </p>
               <ul className="space-y-1">
                 {children.map((c) => (
@@ -248,7 +248,8 @@ function SupabaseCheck() {
             </div>
           ) : (
             <p className="text-xs text-muted-foreground mt-1">
-              No children found. Did you run seed.sql?
+              No children found for your account yet. Add one on the{" "}
+              <a href="/children" className="underline underline-offset-2 hover:text-foreground">Children</a> page.
             </p>
           )}
         </div>

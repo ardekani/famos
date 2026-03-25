@@ -407,6 +407,10 @@ function useReExtract(emailId: string) {
         method:  "POST",
         body:    JSON.stringify({ email_id: emailId }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? `Server error ${res.status}`);
+      }
       return res.json() as Promise<ReExtractResult>;
     },
     onSettled: () => {

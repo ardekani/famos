@@ -19,11 +19,16 @@ import {
   Filter,
   Zap,
   Info,
+  Construction,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const FORWARDING_ADDRESS = "inbox+demo@famos.app";
+// NOTE: Automatic email forwarding is NOT yet live in this MVP.
+// This address is a placeholder shown so the setup flow is fully designed.
+// Until inbound email routing is wired up, users should paste emails
+// manually via the email ingest form on the Emails page.
+const FORWARDING_ADDRESS = "inbox+[your-id]@famos.app";
 
 const FILTER_QUERY =
   '(from:school OR from:teacher OR from:notifications) OR ("field trip" OR "permission slip" OR "PTA" OR "school")';
@@ -212,6 +217,24 @@ export default function GmailForwardingPage() {
           Forward school emails automatically to your Family School OS inbox so
           your dashboard and daily digest stay up to date.
         </p>
+      </div>
+
+      {/* ── MVP coming-soon banner ─────────────────────────────────────── */}
+      <div className="mb-8 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+        <Construction className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            Automatic forwarding isn't live yet
+          </p>
+          <p className="mt-1 text-sm text-amber-800 leading-relaxed">
+            This page shows how forwarding <em>will</em> work. For now, paste school emails
+            directly using the{" "}
+            <Link href="/emails" className="underline underline-offset-2 hover:text-amber-900">
+              Emails page
+            </Link>
+            . Automatic ingest is coming soon.
+          </p>
+        </div>
       </div>
 
       {/* Forwarding address */}

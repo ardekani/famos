@@ -167,7 +167,8 @@ export async function runExtractionAndSave(
     await sb
       .from("emails")
       .update({ processing_status: "failed", extraction_error: result.error })
-      .eq("id", emailId);
+      .eq("id", emailId)
+      .eq("user_id", userId);
 
     return { ok: false, error: result.error };
   }
@@ -177,7 +178,8 @@ export async function runExtractionAndSave(
   await sb
     .from("emails")
     .update({ processing_status: "processed", extraction_error: null })
-    .eq("id", emailId);
+    .eq("id", emailId)
+    .eq("user_id", userId);
 
   return { ok: true, data: { extracted: result.data, saved } };
 }
