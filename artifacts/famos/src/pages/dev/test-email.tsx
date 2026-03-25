@@ -24,7 +24,9 @@ import {
   BookOpen,
   Zap,
 } from "lucide-react";
-import { supabase, isSupabaseConfigured, DEV_USER_ID } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { apiFetch } from "@/lib/api";
 import type { Child } from "@/types/database";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -169,15 +171,16 @@ function SupabaseCheck() {
   const [status, setStatus] = useState<CheckStatus>("idle");
   const [children, setChildren] = useState<Child[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const { user } = useAuth();
 
   const runCheck = async () => {
     setStatus("loading");
     setErrorMsg("");
     setChildren([]);
 
-    if (!supabase) {
+    if (!supabase || !user) {
       setStatus("error");
-      setErrorMsg("VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not set.");
+      setErrorMsg(!supabase ? "VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not set." : "Not signed in.");
       return;
     }
 
@@ -185,7 +188,7 @@ function SupabaseCheck() {
       const { data, error } = await supabase
         .from("children")
         .select("*")
-        .eq("user_id", DEV_USER_ID);
+        .eq("user_id", user.id);
 
       if (error) throw error;
       setChildren(data ?? []);
@@ -601,9 +604,8 @@ export default function TestEmailPage() {
     setNetworkError(null);
 
     try {
-      const res = await fetch("/api/emails/ingest", {
+      const res = await apiFetch("/api/emails/ingest", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subject: subject.trim(), body: body.trim() }),
       });
 

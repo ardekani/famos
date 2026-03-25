@@ -4,21 +4,21 @@
  * POST /api/emails/ingest  — store a new email and run extraction
  * POST /api/emails/extract — re-run extraction for an existing email
  * GET  /api/emails/:id     — fetch email + all extracted entities
+ *
+ * All routes require a valid Supabase Bearer token (set by requireAuth).
  */
 
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import { getSupabaseClient } from "../lib/supabase.js";
+import { requireAuth } from "../lib/auth.js";
 import {
   runExtractionAndSave,
   deleteExtractedEntities,
 } from "../lib/process-email.js";
 
 const router = Router();
-
-// ── Dev constant — replace with real auth middleware later ────────────────
-const DEV_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 // ── Request schemas ───────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ const ExtractBodySchema = z.object({
 
 // ── POST /emails/ingest ───────────────────────────────────────────────────
 
-router.post("/emails/ingest", async (req: Request, res: Response) => {
+router.post("/emails/ingest", requireAuth, async (req: Request, res: Response) => {
   const parse = IngestBodySchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: "Invalid request body", details: parse.error.issues });
@@ -43,7 +43,7 @@ router.post("/emails/ingest", async (req: Request, res: Response) => {
   }
 
   const { subject, body, sender, source_message_id } = parse.data;
-  const userId = DEV_USER_ID;
+  const userId = req.userId;
   const sb = getSupabaseClient();
 
   // 1. Insert the raw email with status = pending
@@ -90,7 +90,7 @@ router.post("/emails/ingest", async (req: Request, res: Response) => {
 
 // ── POST /emails/extract ──────────────────────────────────────────────────
 
-router.post("/emails/extract", async (req: Request, res: Response) => {
+router.post("/emails/extract", requireAuth, async (req: Request, res: Response) => {
   const parse = ExtractBodySchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: "Invalid request body", details: parse.error.issues });
@@ -98,10 +98,10 @@ router.post("/emails/extract", async (req: Request, res: Response) => {
   }
 
   const { email_id } = parse.data;
-  const userId = DEV_USER_ID;
+  const userId = req.userId;
   const sb = getSupabaseClient();
 
-  // 1. Fetch existing email
+  // 1. Fetch existing email (scoped to this user)
   const { data: email, error: fetchError } = await sb
     .from("emails")
     .select("id, subject, body, user_id")
@@ -152,7 +152,7 @@ router.post("/emails/extract", async (req: Request, res: Response) => {
 
 // ── GET /emails/:id ───────────────────────────────────────────────────────
 
-router.get("/emails/:id", async (req: Request, res: Response) => {
+router.get("/emails/:id", requireAuth, async (req: Request, res: Response) => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -161,7 +161,7 @@ router.get("/emails/:id", async (req: Request, res: Response) => {
     return;
   }
 
-  const userId = DEV_USER_ID;
+  const userId = req.userId;
   const sb = getSupabaseClient();
 
   const [emailResult, eventsResult, deadlinesResult, actionItemsResult, notesResult] =

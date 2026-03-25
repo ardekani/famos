@@ -31,7 +31,8 @@ import {
   Check,
 } from "lucide-react";
 import { getEmailWithExtractions, completeActionItem } from "@/lib/queries";
-import { DEV_USER_ID } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { apiFetch } from "@/lib/api";
 import type {
   Event,
   Deadline,
@@ -255,9 +256,10 @@ function DeadlinesCard({ deadlines }: { deadlines: Deadline[] }) {
 function ActionItemsCard({ items }: { items: ActionItem[] }) {
   const queryClient = useQueryClient();
   const [done, setDone] = useState<Set<string>>(new Set());
+  const { user } = useAuth();
 
   const mutation = useMutation({
-    mutationFn: (id: string) => completeActionItem(id, DEV_USER_ID),
+    mutationFn: (id: string) => completeActionItem(id, user!.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
   });
 
@@ -401,9 +403,8 @@ function useReExtract(emailId: string) {
   const queryClient = useQueryClient();
   return useMutation<ReExtractResult, Error>({
     mutationFn: async () => {
-      const res = await fetch("/api/emails/extract", {
+      const res = await apiFetch("/api/emails/extract", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ email_id: emailId }),
       });
       return res.json() as Promise<ReExtractResult>;
@@ -420,10 +421,11 @@ function useReExtract(emailId: string) {
 export default function EmailDetailPage() {
   const params  = useParams<{ id: string }>();
   const emailId = params.id ?? "";
+  const { user } = useAuth();
 
   const { data, isLoading, error } = useQuery({
     queryKey:    ["email", emailId],
-    queryFn:     () => getEmailWithExtractions(emailId, DEV_USER_ID),
+    queryFn:     () => getEmailWithExtractions(emailId, user!.id),
     enabled:     Boolean(emailId),
     staleTime:   30_000,
   });

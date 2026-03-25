@@ -18,7 +18,7 @@ import {
   Inbox,
 } from "lucide-react";
 import { getEmails } from "@/lib/queries";
-import { DEV_USER_ID } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import type { Email } from "@/types/database";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -176,7 +176,8 @@ function EmptyState() {
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export default function EmailsPage() {
-  const userId = DEV_USER_ID;
+  const { user } = useAuth();
+  const userId = user!.id;
 
   const { data: emails, isLoading, error } = useQuery({
     queryKey:    ["emails", userId],

@@ -32,7 +32,8 @@ import {
   Send,
 } from "lucide-react";
 import { getDashboardData, completeActionItem, getLatestDigest } from "@/lib/queries";
-import { DEV_USER_ID } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { apiFetch } from "@/lib/api";
 import type { EventWithChild, Deadline, ActionItemWithChild, Email, Digest } from "@/types/database";
 import { Link } from "wouter";
 
@@ -260,9 +261,10 @@ function TodaySection({
 function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   const queryClient = useQueryClient();
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
+  const { user } = useAuth();
 
   const mutation = useMutation({
-    mutationFn: (id: string) => completeActionItem(id, DEV_USER_ID),
+    mutationFn: (id: string) => completeActionItem(id, user!.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -609,9 +611,8 @@ function DigestCard({ userId }: { userId: string }) {
   const generateMutation = useMutation({
     mutationFn: async () => {
       const today = new Date().toISOString().split("T")[0];
-      const res   = await fetch("/api/digest/generate", {
+      const res   = await apiFetch("/api/digest/generate", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ date: today }),
       });
       if (!res.ok) {
@@ -718,7 +719,8 @@ function DigestCard({ userId }: { userId: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const userId    = DEV_USER_ID;
+  const { user } = useAuth();
+  const userId    = user!.id;
   const start     = weekStart();
   const end       = weekEnd();
   const horizon   = shiftDate(28); // 4 weeks out for deadlines

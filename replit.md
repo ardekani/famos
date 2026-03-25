@@ -15,17 +15,19 @@ FamOS (Family School OS) ingests forwarded school emails, runs AI extraction (Op
 React 19 + Vite + TypeScript + Tailwind CSS. Communicates with Supabase directly (anon key) for data reads and with the API server (via Vite proxy `/api → :8080`) for email ingestion and digest generation.
 
 **Routes:**
-- `/` — Landing / home page
-- `/dashboard` — Main parent command center (events, deadlines, action items, digest)
-- `/emails` — All parsed emails list (newest first, status badges)
-- `/emails/:id` — Email detail: extracted entities, confidence scores, re-run extraction button
-- `/setup/gmail-forwarding` — Step-by-step Gmail forwarding guide
-- `/dev/test-email` — Dev tool: submit a sample email, see extraction results live
+- `/` — Landing / home page (public)
+- `/login` — Magic-link sign-in (public; redirects to `/dashboard` if already signed in)
+- `/dashboard` — Main parent command center (protected)
+- `/emails` — All parsed emails list (protected)
+- `/emails/:id` — Email detail (protected)
+- `/setup/gmail-forwarding` — Gmail forwarding guide (protected)
+- `/dev/test-email` — Dev tool: submit a sample email (protected)
 
 **Key source files:**
 - `src/lib/queries.ts` — All typed Supabase query helpers
-- `src/lib/supabase.ts` — Supabase browser client + `DEV_USER_ID` constant
-- `src/lib/auth.ts` — Mock auth (replace with real auth for production)
+- `src/lib/supabase.ts` — Supabase browser client (no DEV_USER_ID; real auth)
+- `src/lib/auth.tsx` — Real auth: `AuthProvider`, `useAuth()` hook, Supabase magic-link session management, user sync
+- `src/lib/api.ts` — `apiFetch()` helper that attaches Supabase JWT to all API calls
 - `src/types/database.ts` — TypeScript types mirroring the DB schema
 - `src/pages/dashboard.tsx` — Dashboard with Today / Action Needed / This Week / Digest / Recent Emails sections
 - `src/pages/emails/index.tsx` — Emails list page
@@ -54,6 +56,7 @@ Express 5, TypeScript, compiled with esbuild to `dist/index.mjs`. Mounts all rou
 - `src/lib/digest.ts` — Digest generation logic + HTML renderer for Resend
 - `src/lib/dev-seeds.ts` — 10 typed seed email fixtures
 - `src/lib/supabase.ts` — Server-side Supabase client (reads `VITE_SUPABASE_*` vars)
+- `src/lib/auth.ts` — `requireAuth` middleware: verifies Supabase JWT, sets `req.userId`
 - `src/routes/index.ts` — Route registration (dev routes excluded in production)
 
 ## Environment Variables
