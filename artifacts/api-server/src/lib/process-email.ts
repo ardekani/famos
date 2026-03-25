@@ -125,13 +125,18 @@ export async function saveExtractedEntities(
 
 // ── Delete entities ────────────────────────────────────────────────────────
 
-export async function deleteExtractedEntities(emailId: string) {
+/**
+ * Delete all extracted entities for a given email.
+ * userId is required to ensure we never touch another user's rows —
+ * even if the caller passes an email_id that belongs to someone else.
+ */
+export async function deleteExtractedEntities(emailId: string, userId: string) {
   const sb = getSupabaseClient();
   await Promise.all([
-    sb.from("events").delete().eq("source_email_id", emailId),
-    sb.from("deadlines").delete().eq("source_email_id", emailId),
-    sb.from("action_items").delete().eq("source_email_id", emailId),
-    sb.from("notes").delete().eq("source_email_id", emailId),
+    sb.from("events").delete().eq("source_email_id", emailId).eq("user_id", userId),
+    sb.from("deadlines").delete().eq("source_email_id", emailId).eq("user_id", userId),
+    sb.from("action_items").delete().eq("source_email_id", emailId).eq("user_id", userId),
+    sb.from("notes").delete().eq("source_email_id", emailId).eq("user_id", userId),
   ]);
 }
 

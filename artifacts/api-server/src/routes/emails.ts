@@ -114,8 +114,8 @@ router.post("/emails/extract", async (req: Request, res: Response) => {
     return;
   }
 
-  // 2. Delete previously extracted entities
-  await deleteExtractedEntities(email_id);
+  // 2. Delete previously extracted entities (scoped to this user)
+  await deleteExtractedEntities(email_id, userId);
 
   // 3. Mark as pending before re-running
   await sb
@@ -172,10 +172,10 @@ router.get("/emails/:id", async (req: Request, res: Response) => {
         .eq("id", id)
         .eq("user_id", userId)
         .single(),
-      sb.from("events").select("*").eq("source_email_id", id).order("date"),
-      sb.from("deadlines").select("*").eq("source_email_id", id).order("date"),
-      sb.from("action_items").select("*").eq("source_email_id", id).order("due_date"),
-      sb.from("notes").select("*").eq("source_email_id", id),
+      sb.from("events").select("*").eq("source_email_id", id).eq("user_id", userId).order("date"),
+      sb.from("deadlines").select("*").eq("source_email_id", id).eq("user_id", userId).order("date"),
+      sb.from("action_items").select("*").eq("source_email_id", id).eq("user_id", userId).order("due_date"),
+      sb.from("notes").select("*").eq("source_email_id", id).eq("user_id", userId),
     ]);
 
   if (emailResult.error || !emailResult.data) {
