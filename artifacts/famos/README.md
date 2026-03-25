@@ -31,6 +31,29 @@ FamOS automatically extracts events, deadlines, and action items from forwarded 
 
 ---
 
+## Database Setup (Supabase)
+
+The schema lives in `supabase/schema.sql` and seed data in `supabase/seed.sql`.
+
+### Option A — Supabase SQL Editor (quickest)
+1. Open your Supabase project → **SQL Editor → New query**
+2. Paste and run `supabase/schema.sql`
+3. Paste and run `supabase/seed.sql` (creates mock user + sample data)
+
+### Option B — Supabase CLI
+```bash
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db reset   # runs schema.sql + seed.sql automatically
+```
+
+After running the seed, your dev user is:
+- **ID**: `00000000-0000-0000-0000-000000000001`
+- **Email**: `alex@family.example`
+- **Children**: Jordan and Casey (Riverside Elementary)
+
+---
+
 ## Local Setup
 
 ### 1. Clone and install dependencies
