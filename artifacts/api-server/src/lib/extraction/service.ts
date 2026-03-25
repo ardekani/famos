@@ -141,7 +141,7 @@ export async function extractFromEmail(
     subject,
     body,
     children,
-    model = "gpt-4o-mini",
+    model = "gpt-4.5-nano",
   } = params;
 
   const log = logger.child({ emailId, service: "extraction" });
