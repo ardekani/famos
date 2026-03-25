@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import LoginPage        from "@/pages/login";
 import HomePage         from "@/pages/home";
 import DashboardPage    from "@/pages/dashboard";
+import ChildrenPage     from "@/pages/children";
 import EmailsPage       from "@/pages/emails/index";
 import EmailDetailPage  from "@/pages/emails/email-detail";
 import GmailForwardingPage from "@/pages/setup/gmail-forwarding";
@@ -68,6 +69,9 @@ function Router() {
       {/* Protected app routes */}
       <Route path="/dashboard">
         <ProtectedRoute component={DashboardPage} />
+      </Route>
+      <Route path="/children">
+        <ProtectedRoute component={ChildrenPage} />
       </Route>
       <Route path="/emails">
         <ProtectedRoute component={EmailsPage} />

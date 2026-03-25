@@ -6,12 +6,13 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Mail, Settings, FlaskConical, LogOut } from "lucide-react";
+import { LayoutDashboard, Mail, Users, Settings, FlaskConical, LogOut } from "lucide-react";
 
 const navLinks = [
-  { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard },
-  { href: "/emails",               label: "Emails",    icon: Mail           },
-  { href: "/setup/gmail-forwarding", label: "Setup",   icon: Settings       },
+  { href: "/dashboard",              label: "Dashboard", icon: LayoutDashboard },
+  { href: "/emails",                 label: "Emails",    icon: Mail            },
+  { href: "/children",               label: "Children",  icon: Users           },
+  { href: "/setup/gmail-forwarding", label: "Setup",     icon: Settings        },
 ];
 
 const devLinks = [

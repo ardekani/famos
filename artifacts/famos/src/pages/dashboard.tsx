@@ -31,7 +31,7 @@ import {
   ChevronUp,
   Send,
 } from "lucide-react";
-import { getDashboardData, completeActionItem, getLatestDigest } from "@/lib/queries";
+import { getDashboardData, completeActionItem, getLatestDigest, getChildren } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 import type { EventWithChild, Deadline, ActionItemWithChild, Email, Digest } from "@/types/database";
@@ -728,9 +728,21 @@ export default function DashboardPage() {
   const { data, isLoading, error } = useQuery({
     queryKey:    ["dashboard", userId, start, end],
     queryFn:     () => getDashboardData(userId, start, end, horizon),
-    staleTime:   60_000, // re-fetch at most every 60 s
+    staleTime:   60_000,
     retry:       1,
   });
+
+  const { data: children = [] } = useQuery({
+    queryKey: ["children", userId],
+    queryFn:  () => getChildren(userId),
+    staleTime: 60_000,
+  });
+
+  // Derive first-name-like label from email (e.g. "alex@..." → "Alex")
+  const firstName = (() => {
+    const prefix = user?.email?.split("@")[0] ?? "";
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  })();
 
   const today = todayISO();
   const weekLabel = (() => {
@@ -750,7 +762,7 @@ export default function DashboardPage() {
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            {greeting()}, Alex
+            {greeting()}, {firstName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {new Date().toLocaleDateString("en-US", {
@@ -774,6 +786,26 @@ export default function DashboardPage() {
 
       {/* ── Daily Digest ── */}
       <DigestCard userId={userId} />
+
+      {/* ── No children nudge ── */}
+      {children.length === 0 && (
+        <div className="mb-8 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">
+              Set up your children's names
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              Add your kids so FamOS can match emails to the right child automatically.
+            </p>
+          </div>
+          <Link
+            href="/children"
+            className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Add children →
+          </Link>
+        </div>
+      )}
 
       {/* ── Error state ── */}
       {error && (

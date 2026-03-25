@@ -50,6 +50,64 @@ export async function getChildren(userId: string): Promise<Child[]> {
   return data ?? [];
 }
 
+/** Add a new child for a user. Throws on duplicate name. */
+export async function addChild(
+  userId: string,
+  name: string,
+  schoolName?: string
+): Promise<Child> {
+  const db = requireClient();
+  const { data, error } = await db
+    .from("children")
+    .insert({ user_id: userId, name: name.trim(), school_name: schoolName?.trim() || null })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Child;
+}
+
+/** Update a child's name / school, scoped to the owner. */
+export async function updateChild(
+  childId: string,
+  userId: string,
+  name: string,
+  schoolName?: string
+): Promise<Child> {
+  const db = requireClient();
+  const { data, error } = await db
+    .from("children")
+    .update({ name: name.trim(), school_name: schoolName?.trim() || null })
+    .eq("id", childId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Child;
+}
+
+/**
+ * Delete a child. Before removing the row, set child_id = null on all
+ * extracted entities so historical records are preserved.
+ */
+export async function deleteChild(childId: string, userId: string): Promise<void> {
+  const db = requireClient();
+
+  // Null-out child references in all entity tables (scoped to user)
+  await Promise.all([
+    db.from("events").update({ child_id: null }).eq("child_id", childId).eq("user_id", userId),
+    db.from("deadlines").update({ child_id: null }).eq("child_id", childId).eq("user_id", userId),
+    db.from("action_items").update({ child_id: null }).eq("child_id", childId).eq("user_id", userId),
+    db.from("notes").update({ child_id: null }).eq("child_id", childId).eq("user_id", userId),
+  ]);
+
+  const { error } = await db
+    .from("children")
+    .delete()
+    .eq("id", childId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 // ── Emails ────────────────────────────────────────────────────────────────
 
 /** Fetch emails for a user, newest first */
