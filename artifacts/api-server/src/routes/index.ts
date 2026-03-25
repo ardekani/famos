@@ -1,10 +1,16 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import emailsRouter from "./emails";
+import devRouter from "./dev";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(emailsRouter);
+
+// Dev routes — only mount in non-production environments
+if (process.env.NODE_ENV !== "production") {
+  router.use(devRouter);
+}
 
 export default router;

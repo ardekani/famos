@@ -10,8 +10,10 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import { getSupabaseClient } from "../lib/supabase.js";
-import { extractFromEmail } from "../lib/extraction/index.js";
-import type { ResolvedExtractionResult } from "../lib/extraction/index.js";
+import {
+  runExtractionAndSave,
+  deleteExtractedEntities,
+} from "../lib/process-email.js";
 
 const router = Router();
 
@@ -30,167 +32,6 @@ const IngestBodySchema = z.object({
 const ExtractBodySchema = z.object({
   email_id: z.string().uuid(),
 });
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-/** Fetch children rows for a user (needed for child name resolution) */
-async function fetchChildren(userId: string) {
-  const sb = getSupabaseClient();
-  const { data, error } = await sb
-    .from("children")
-    .select("id, name")
-    .eq("user_id", userId);
-
-  if (error) throw new Error(`Failed to fetch children: ${error.message}`);
-  return data ?? [];
-}
-
-/** Delete all extracted entities linked to an email */
-async function deleteExtractedEntities(emailId: string) {
-  const sb = getSupabaseClient();
-  await Promise.all([
-    sb.from("events").delete().eq("source_email_id", emailId),
-    sb.from("deadlines").delete().eq("source_email_id", emailId),
-    sb.from("action_items").delete().eq("source_email_id", emailId),
-    sb.from("notes").delete().eq("source_email_id", emailId),
-  ]);
-}
-
-/**
- * Save extracted entities to the database.
- * Returns the saved rows with their generated IDs.
- */
-async function saveExtractedEntities(
-  userId: string,
-  emailId: string,
-  data: ResolvedExtractionResult
-) {
-  const sb = getSupabaseClient();
-
-  const [events, deadlines, actionItems, notes] = await Promise.all([
-    data.events.length > 0
-      ? sb
-          .from("events")
-          .insert(
-            data.events.map((e) => ({
-              user_id:         userId,
-              source_email_id: emailId,
-              child_id:        e.child_id,
-              raw_child_name:  e.raw_child_name,
-              title:           e.title,
-              date:            e.date,
-              start_time:      e.start_time,
-              end_time:        e.end_time,
-              location:        e.location,
-              description:     e.description,
-              confidence:      e.confidence,
-            }))
-          )
-          .select()
-      : Promise.resolve({ data: [], error: null }),
-
-    data.deadlines.length > 0
-      ? sb
-          .from("deadlines")
-          .insert(
-            data.deadlines.map((d) => ({
-              user_id:         userId,
-              source_email_id: emailId,
-              child_id:        d.child_id,
-              raw_child_name:  d.raw_child_name,
-              title:           d.title,
-              date:            d.date,
-              description:     d.description,
-              confidence:      d.confidence,
-            }))
-          )
-          .select()
-      : Promise.resolve({ data: [], error: null }),
-
-    data.action_items.length > 0
-      ? sb
-          .from("action_items")
-          .insert(
-            data.action_items.map((a) => ({
-              user_id:         userId,
-              source_email_id: emailId,
-              child_id:        a.child_id,
-              raw_child_name:  a.raw_child_name,
-              task:            a.task,
-              due_date:        a.due_date,
-              priority:        a.priority,
-              confidence:      a.confidence,
-            }))
-          )
-          .select()
-      : Promise.resolve({ data: [], error: null }),
-
-    data.notes.length > 0
-      ? sb
-          .from("notes")
-          .insert(
-            data.notes.map((n) => ({
-              user_id:         userId,
-              source_email_id: emailId,
-              child_id:        n.child_id,
-              raw_child_name:  n.raw_child_name,
-              content:         n.content,
-            }))
-          )
-          .select()
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  for (const result of [events, deadlines, actionItems, notes]) {
-    if (result.error) {
-      throw new Error(`Failed to save extracted entities: ${result.error.message}`);
-    }
-  }
-
-  return {
-    events:       events.data       ?? [],
-    deadlines:    deadlines.data    ?? [],
-    action_items: actionItems.data  ?? [],
-    notes:        notes.data        ?? [],
-  };
-}
-
-/** Run extraction and persist the result; update email status either way */
-async function runExtractionAndSave(
-  emailId: string,
-  subject: string,
-  body: string,
-  userId: string
-) {
-  const sb = getSupabaseClient();
-  const children = await fetchChildren(userId);
-
-  const result = await extractFromEmail({
-    emailId,
-    subject,
-    body,
-    userId,
-    children,
-  });
-
-  if (!result.success) {
-    await sb
-      .from("emails")
-      .update({ processing_status: "failed", extraction_error: result.error })
-      .eq("id", emailId);
-
-    return { ok: false as const, error: result.error };
-  }
-
-  const saved = await saveExtractedEntities(userId, emailId, result.data);
-
-  await sb
-    .from("emails")
-    .update({ processing_status: "processed", extraction_error: null })
-    .eq("id", emailId);
-
-  return { ok: true as const, data: { extracted: result.data, saved } };
-}
 
 // ── POST /emails/ingest ───────────────────────────────────────────────────
 
@@ -232,9 +73,9 @@ router.post("/emails/ingest", async (req: Request, res: Response) => {
 
   if (!extraction.ok) {
     res.status(422).json({
-      email_id: email.id,
+      email_id:          email.id,
       processing_status: "failed",
-      error: extraction.error,
+      error:             extraction.error,
     });
     return;
   }
@@ -296,7 +137,7 @@ router.post("/emails/extract", async (req: Request, res: Response) => {
     res.status(422).json({
       email_id,
       processing_status: "failed",
-      error: extraction.error,
+      error:             extraction.error,
     });
     return;
   }
