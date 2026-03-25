@@ -1,120 +1,113 @@
-# Workspace
+# FamOS — Workspace Reference
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo. Two active artifacts: a React + Vite frontend (`artifacts/famos`) and an Express API server (`artifacts/api-server`).
 
-## FamOS
+## What the App Does
 
-Family School OS — turns school email chaos into a clear weekly plan.
-A React + Vite + Tailwind CSS web app registered as `@workspace/famos` at `artifacts/famos/`.
+FamOS (Family School OS) ingests forwarded school emails, runs AI extraction (OpenAI gpt-4.1-nano server-side) to pull out events, deadlines, action items, and notes, and displays everything in a parent-friendly dashboard. A daily digest can be generated on demand and optionally emailed via Resend.
 
-### Pages
-- `/` — Landing page with hero copy and CTAs
-- `/dashboard` — This week's events, deadlines, and action items
-- `/emails/:id` — Email detail with extracted events, actions, supplies
-- `/setup/gmail-forwarding` — Step-by-step Gmail forwarding setup
-- `/dev/test-email` — Dev tool: paste email, see mock parsed output
+## Artifacts
 
-### Client stubs (artifacts/famos/src/lib/)
-- `auth.ts` — Mock auth (MOCK_USER, isAuthenticated) — replace with real auth
-- `supabase.ts` — Supabase client stub (commented out until keys added)
-- `openai.ts` — Usage notes (OpenAI is server-side only in API server)
-- `resend.ts` — Usage notes (Resend is server-side only in API server)
+### Frontend — `@workspace/famos` at `artifacts/famos/`
 
-### Environment
-Copy `artifacts/famos/.env.example` to `.env` and fill in:
-- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — Supabase project keys
-- `OPENAI_API_KEY` — Server-side only (in API server)
-- `RESEND_API_KEY` — Server-side only (in API server)
+React 19 + Vite + TypeScript + Tailwind CSS. Communicates with Supabase directly (anon key) for data reads and with the API server (via Vite proxy `/api → :8080`) for email ingestion and digest generation.
 
-## Stack
+**Routes:**
+- `/` — Landing / home page
+- `/dashboard` — Main parent command center (events, deadlines, action items, digest)
+- `/emails` — All parsed emails list (newest first, status badges)
+- `/emails/:id` — Email detail: extracted entities, confidence scores, re-run extraction button
+- `/setup/gmail-forwarding` — Step-by-step Gmail forwarding guide
+- `/dev/test-email` — Dev tool: submit a sample email, see extraction results live
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+**Key source files:**
+- `src/lib/queries.ts` — All typed Supabase query helpers
+- `src/lib/supabase.ts` — Supabase browser client + `DEV_USER_ID` constant
+- `src/lib/auth.ts` — Mock auth (replace with real auth for production)
+- `src/types/database.ts` — TypeScript types mirroring the DB schema
+- `src/pages/dashboard.tsx` — Dashboard with Today / Action Needed / This Week / Digest / Recent Emails sections
+- `src/pages/emails/index.tsx` — Emails list page
+- `src/pages/emails/email-detail.tsx` — Email detail with full debug info
 
-## Structure
+### API Server — `@workspace/api-server` at `artifacts/api-server/`
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+Express 5, TypeScript, compiled with esbuild to `dist/index.mjs`. Mounts all routes under `/api`.
+
+**Endpoints:**
+- `GET  /api/health` — Health check
+- `POST /api/emails/ingest` — Ingest a new email and run extraction
+- `POST /api/emails/extract` — Re-run extraction for an existing email
+- `GET  /api/emails/:id` — Fetch email + all extracted entities
+- `POST /api/digest/generate` — Generate + save a digest from current DB data
+- `POST /api/digest/send` — Send the latest digest via Resend (requires `RESEND_API_KEY`)
+- `GET  /api/digest/latest` — Fetch the most recently generated digest
+- `POST /api/dev/seed` — Insert 10 realistic seed emails (dev only)
+- `GET  /api/dev/seed` — List seeded emails (dev only)
+- `DELETE /api/dev/seed` — Remove all seeded emails (dev only)
+
+**Key source files:**
+- `src/lib/extraction/service.ts` — OpenAI call + Zod schema validation
+- `src/lib/extraction/prompt.ts` — System prompt for extraction
+- `src/lib/process-email.ts` — Orchestrates extraction + DB saves + status update
+- `src/lib/digest.ts` — Digest generation logic + HTML renderer for Resend
+- `src/lib/dev-seeds.ts` — 10 typed seed email fixtures
+- `src/lib/supabase.ts` — Server-side Supabase client (reads `VITE_SUPABASE_*` vars)
+- `src/routes/index.ts` — Route registration (dev routes excluded in production)
+
+## Environment Variables
+
+Set in Replit Secrets (padlock icon). See `.env.example` for the full list.
+
+| Variable | Used by | Required |
+|---|---|---|
+| `VITE_SUPABASE_URL` | frontend + api-server | Yes |
+| `VITE_SUPABASE_ANON_KEY` | frontend + api-server | Yes |
+| `OPENAI_API_KEY` | api-server | Yes |
+| `RESEND_API_KEY` | api-server | No (digest email only) |
+| `RESEND_FROM_EMAIL` | api-server | No |
+| `PORT` | api-server | Auto-set to 8080 |
+
+## Dev User
+
+Auth is mocked. All queries use:
+
+```ts
+DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
 ```
 
-## TypeScript & Composite Projects
+This user must exist in the `users` table (the schema creates it, or the seed route upserts it).
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+## Extraction Model
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+OpenAI `gpt-4.1-nano` with `max_completion_tokens: 2048`. Uses JSON structured output. The Zod schema validates the response strictly — any validation failure marks the email as `failed` with the error stored in `extraction_error`.
 
-## Root Scripts
+## What is Real vs Mocked
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+| Feature | Status |
+|---|---|
+| Email storage (Supabase) | ✅ Real |
+| AI extraction (OpenAI) | ✅ Real |
+| Dashboard data | ✅ Real |
+| Action item completion | ✅ Real |
+| Digest generation | ✅ Real |
+| Digest email (Resend) | ✅ Real — needs RESEND_API_KEY |
+| User auth | ⚠️ Mocked — hardcoded DEV_USER_ID |
+| Inbound email webhook | ⚠️ Simulated — manual API submission only |
+| Child-ID linking | ⚠️ Partial — raw_child_name extracted; child_id FK not auto-matched |
 
-## Packages
+## Database Schema
 
-### `artifacts/api-server` (`@workspace/api-server`)
+Full schema at `supabase/schema.sql`. Tables: `users`, `children`, `emails`, `events`, `deadlines`, `action_items`, `notes`, `digests`.
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## Workflows
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+| Workflow | Command |
+|---|---|
+| `artifacts/api-server: API Server` | `pnpm --filter @workspace/api-server run dev` |
+| `artifacts/famos: web` | `pnpm --filter @workspace/famos run dev` |
 
-### `lib/db` (`@workspace/db`)
+## Monorepo
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+pnpm workspaces. TypeScript project references. See README.md for full setup, extraction flow, and roadmap docs.

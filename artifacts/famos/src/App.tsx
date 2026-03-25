@@ -10,8 +10,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import HomePage from "@/pages/home";
 import DashboardPage from "@/pages/dashboard";
-import GmailForwardingPage from "@/pages/setup/gmail-forwarding";
+import EmailsPage from "@/pages/emails/index";
 import EmailDetailPage from "@/pages/emails/email-detail";
+import GmailForwardingPage from "@/pages/setup/gmail-forwarding";
 import TestEmailPage from "@/pages/dev/test-email";
 import NotFound from "@/pages/not-found";
 
@@ -25,6 +26,7 @@ function Router() {
 
       {/* App routes */}
       <Route path="/dashboard" component={DashboardPage} />
+      <Route path="/emails" component={EmailsPage} />
       <Route path="/emails/:id" component={EmailDetailPage} />
 
       {/* Setup */}
