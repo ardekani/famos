@@ -1,0 +1,112 @@
+Improve the landing page UI and copy for the Family School OS app to increase clarity, emotional resonance, and conversion.
+
+Current goal:
+The page already looks clean and trustworthy. Now optimize it to:
+- make the value more emotional (fear of missing things for kids)
+- make the outcome more concrete
+- increase click-through on the primary CTA
+- reduce perceived setup effort
+
+Do NOT redesign from scratch. Keep the existing layout, colors, and structure. Only refine copy and add a few high-impact UI elements.
+
+Make the following changes:
+
+1. Headline improvement (more emotional + outcome-driven)
+
+Replace the current headline:
+"Turn school email chaos into a clear weekly plan"
+
+With one of these (pick best and implement):
+- "Never miss another school deadline or event"
+- "Stop missing school emails. Know exactly what your kids need this week."
+
+Keep it short, clear, and parent-focused.
+
+2. Subheadline refinement
+
+Update the subheadline to feel more outcome-driven and less generic.
+
+Target style:
+"Family School OS automatically turns school emails into a clear weekly plan — so you always know what’s happening and what needs action."
+
+Avoid generic AI wording. Focus on clarity and relief.
+
+3. Primary CTA improvement
+
+Replace:
+"Try it with a sample email"
+
+With something more outcome-driven:
+- "Turn an email into a plan"
+OR
+- "See your first weekly plan"
+
+Keep secondary CTA:
+"Set up Gmail forwarding"
+
+Make primary CTA visually dominant.
+
+4. Add a “Concrete Example” block (VERY IMPORTANT)
+
+Directly under the hero section, add a small card or section showing example output:
+
+Title:
+"Here’s what you’ll see"
+
+Content (styled like a clean card):
+
+Today
+- Emma: Field trip (bring lunch)
+
+This week
+- Fri: Permission slip due
+- Mon: Pajama Day
+
+Action needed
+- Sign permission slip [HIGH]
+- Pack lunch [MEDIUM]
+
+Make this visually simple and readable. This helps users immediately understand the product.
+
+5. Improve “How it works” wording (reduce friction)
+
+Update step 1 from:
+"Forward your school emails"
+
+To something softer like:
+- "Connect or forward your school emails"
+- "We automatically organize your school emails"
+
+Reduce the feeling of effort.
+
+6. Add trust / reassurance line
+
+Add a small line under CTAs:
+
+- "Works with any school emails"
+- "Set it once and it runs automatically"
+
+Keep it subtle, not salesy.
+
+7. Improve visual hierarchy slightly
+
+- Increase spacing between sections
+- Ensure CTA buttons stand out clearly
+- Make cards slightly more prominent
+- Keep everything minimal and calm
+
+8. Optional (if easy): dashboard preview
+
+If simple, add a small mock preview of the dashboard (Today / This Week / Action Needed)
+Otherwise skip for now.
+
+Constraints:
+- Do not overcomplicate
+- Do not add heavy graphics
+- Keep fast loading
+- Keep parent-friendly tone
+- No jargon
+
+After implementing:
+- ensure responsiveness works on mobile
+- keep code clean and componentized
