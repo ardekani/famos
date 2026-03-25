@@ -3,10 +3,6 @@
  *
  * Every function accepts a userId so queries are always scoped to the
  * current user. Returns typed results from database.ts.
- *
- * Usage:
- *   import { getWeekSummary } from "@/lib/queries";
- *   const summary = await getWeekSummary(userId, weekStart, weekEnd);
  */
 
 import { supabase } from "./supabase";
@@ -149,7 +145,7 @@ export async function insertEvents(events: InsertEvent[]): Promise<Event[]> {
 
 // ── Deadlines ─────────────────────────────────────────────────────────────
 
-/** Fetch upcoming deadlines for a user */
+/** Fetch upcoming deadlines for a user in a date range */
 export async function getDeadlines(
   userId: string,
   from: string,
@@ -182,7 +178,10 @@ export async function insertDeadlines(
 
 // ── Action items ──────────────────────────────────────────────────────────
 
-/** Fetch open (not completed) action items for a user */
+/**
+ * Fetch open (not completed) action items for a user.
+ * Sorted client-side by priority weight (high → medium → low) then due date.
+ */
 export async function getOpenActionItems(
   userId: string
 ): Promise<ActionItemWithChild[]> {
@@ -192,10 +191,13 @@ export async function getOpenActionItems(
     .select("*, child:children(id, name)")
     .eq("user_id", userId)
     .eq("completed", false)
-    .order("priority") // high → medium → low
-    .order("due_date");
+    .order("due_date", { ascending: true, nullsFirst: false });
   if (error) throw error;
-  return (data ?? []) as ActionItemWithChild[];
+
+  const priorityWeight = { high: 0, medium: 1, low: 2 };
+  return ((data ?? []) as ActionItemWithChild[]).sort(
+    (a, b) => priorityWeight[a.priority] - priorityWeight[b.priority]
+  );
 }
 
 /** Mark an action item as completed */
@@ -246,12 +248,35 @@ export async function insertNotes(notes: InsertNote[]): Promise<Note[]> {
 // ── Dashboard / Week summary ──────────────────────────────────────────────
 
 /**
- * Fetch everything needed for the dashboard week view in one call.
- * Pass ISO date strings for the start and end of the target week.
- *
- * Example:
- *   const summary = await getWeekSummary(userId, "2026-03-24", "2026-03-30");
+ * Fetch everything needed for the dashboard in one shot.
+ * events + deadlines cover weekStart → deadlineHorizon (4 weeks out).
+ * action_items are always all open items regardless of date.
  */
+export async function getDashboardData(
+  userId: string,
+  weekStart: string,
+  weekEnd: string,
+  deadlineHorizon: string
+): Promise<WeekSummary & { upcomingDeadlines: Deadline[]; recentEmails: Email[] }> {
+  const [events, weekDeadlines, upcomingDeadlines, action_items, recentEmails] =
+    await Promise.all([
+      getEvents(userId, weekStart, weekEnd),
+      getDeadlines(userId, weekStart, weekEnd),
+      getDeadlines(userId, weekStart, deadlineHorizon),
+      getOpenActionItems(userId),
+      getEmails(userId, 6),
+    ]);
+
+  return {
+    events,
+    deadlines: weekDeadlines,
+    upcomingDeadlines,
+    action_items,
+    recentEmails,
+  };
+}
+
+/** @deprecated Use getDashboardData instead */
 export async function getWeekSummary(
   userId: string,
   weekStart: string,
@@ -262,6 +287,5 @@ export async function getWeekSummary(
     getDeadlines(userId, weekStart, weekEnd),
     getOpenActionItems(userId),
   ]);
-
   return { events, deadlines, action_items };
 }
