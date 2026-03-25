@@ -13,6 +13,7 @@ import type {
   Deadline,
   ActionItem,
   Note,
+  Digest,
   EventWithChild,
   ActionItemWithChild,
   WeekSummary,
@@ -274,6 +275,22 @@ export async function getDashboardData(
     action_items,
     recentEmails,
   };
+}
+
+// ── Digests ───────────────────────────────────────────────────────────────
+
+/** Fetch the most recently generated digest for a user */
+export async function getLatestDigest(userId: string): Promise<Digest | null> {
+  const db = requireClient();
+  const { data, error } = await db
+    .from("digests")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
 }
 
 /** @deprecated Use getDashboardData instead */

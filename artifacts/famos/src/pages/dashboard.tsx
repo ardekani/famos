@@ -24,10 +24,16 @@ import {
   PartyPopper,
   CalendarX,
   Sparkles,
+  FileText,
+  RefreshCw,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Send,
 } from "lucide-react";
-import { getDashboardData, completeActionItem } from "@/lib/queries";
+import { getDashboardData, completeActionItem, getLatestDigest } from "@/lib/queries";
 import { DEV_USER_ID } from "@/lib/supabase";
-import type { EventWithChild, Deadline, ActionItemWithChild, Email } from "@/types/database";
+import type { EventWithChild, Deadline, ActionItemWithChild, Email, Digest } from "@/types/database";
 import { Link } from "wouter";
 
 // ── Date utilities ────────────────────────────────────────────────────────
@@ -582,6 +588,133 @@ function DashboardSkeleton() {
   );
 }
 
+// ── Digest card ───────────────────────────────────────────────────────────
+
+interface DigestJson {
+  date: string;
+  summary: { urgent_count: number; total_actions: number; is_calm: boolean };
+  action_needed: { task: string; priority: string; due_date: string | null; child_name: string | null }[];
+}
+
+function DigestCard({ userId }: { userId: string }) {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: digest, isLoading } = useQuery({
+    queryKey:  ["digest", userId],
+    queryFn:   () => getLatestDigest(userId),
+    staleTime: 60_000,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const res   = await fetch("/api/digest/generate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ date: today }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Generation failed");
+      }
+      return res.json() as Promise<{ content_text: string; content_json: DigestJson; created_at: string }>;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["digest", userId] }),
+  });
+
+  const relativeTime = (iso: string) => {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins   = Math.floor(diffMs / 60_000);
+    if (mins < 1)   return "just now";
+    if (mins < 60)  return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)   return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  const json = digest?.content_json as unknown as DigestJson | null;
+
+  return (
+    <div className="mb-8 rounded-xl border border-border bg-card shadow-xs">
+      {/* Header row */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">Daily Digest</span>
+          {digest && json && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {json.summary.is_calm
+                ? "All clear"
+                : `${json.summary.urgent_count} urgent · ${json.summary.total_actions} actions`}
+            </span>
+          )}
+          {digest && (
+            <span className="text-[11px] text-muted-foreground/60">
+              {relativeTime(digest.created_at)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Generate / Regenerate */}
+          <button
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending || isLoading}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {generateMutation.isPending
+              ? <><Loader2 className="h-3 w-3 animate-spin" />Generating…</>
+              : <><RefreshCw className="h-3 w-3" />{digest ? "Regenerate" : "Generate"}</>}
+          </button>
+
+          {/* Expand / collapse */}
+          {digest && (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+              aria-label={expanded ? "Collapse digest" : "Expand digest"}
+            >
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Error */}
+      {generateMutation.isError && (
+        <div className="border-t border-red-100 bg-red-50 px-4 py-2">
+          <p className="text-xs text-red-700">
+            {generateMutation.error instanceof Error ? generateMutation.error.message : "Generation failed"}
+          </p>
+        </div>
+      )}
+
+      {/* No digest yet */}
+      {!isLoading && !digest && !generateMutation.isPending && (
+        <p className="border-t border-border px-4 py-3 text-xs italic text-muted-foreground">
+          No digest generated yet — click Generate to create one from your current data.
+        </p>
+      )}
+
+      {/* Digest body (collapsible) */}
+      {digest && expanded && (
+        <div className="border-t border-border px-4 py-4">
+          <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-muted-foreground">
+            {digest.content_text}
+          </pre>
+          {digest.sent_at && (
+            <p className="mt-3 flex items-center gap-1 text-[11px] text-green-700">
+              <Send className="h-3 w-3" />
+              Sent {relativeTime(digest.sent_at)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -636,6 +769,9 @@ export default function DashboardPage() {
           </span>
         )}
       </div>
+
+      {/* ── Daily Digest ── */}
+      <DigestCard userId={userId} />
 
       {/* ── Error state ── */}
       {error && (
