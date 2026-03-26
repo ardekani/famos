@@ -69,8 +69,17 @@ Expected output shape:
 }`;
 
 /** Build the user message for a specific email */
-export function buildUserMessage(subject: string, body: string): string {
+export function buildUserMessage(
+  subject: string,
+  body: string,
+  childNames: string[] = []
+): string {
+  const childHint =
+    childNames.length > 0
+      ? `\n\nRegistered children for this family:\n${childNames.map((n) => `- ${n}`).join("\n")}\n\nWhen a child is mentioned in the email, use their registered name exactly as listed above. If you cannot match the reference to any registered child, use "unknown".`
+      : "";
+
   return `Email Subject: ${subject}
 Email Body:
-${body}`;
+${body}${childHint}`;
 }

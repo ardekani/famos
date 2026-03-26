@@ -51,8 +51,43 @@ function getOpenAIClient(): OpenAI {
 // ── Child name resolution ─────────────────────────────────────────────────
 
 /**
- * Match a raw child name string to a known child record.
- * Uses case-insensitive exact matching.
+ * Levenshtein distance between two strings (case-insensitive).
+ * Returns a count of single-character edits.
+ */
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Match a raw child name string to a known child record using a tiered
+ * strategy (fastest / most precise first):
+ *
+ *  Tier 1 — Exact match (case-insensitive)
+ *           "Emma Johnson" → "emma johnson"
+ *
+ *  Tier 2 — First-name match
+ *           "Emma" → child whose first name token is "Emma"
+ *           OR child "Emma Johnson" whose first token matches extracted name
+ *
+ *  Tier 3 — Substring containment
+ *           "Emma" contained in "Emma Johnson", or vice-versa
+ *
+ *  Tier 4 — Fuzzy (Levenshtein ≤ 2) on any name token
+ *           "Emm" or "Emmma" → "Emma"
+ *
  * Returns null for both fields when the name is "unknown" or empty.
  */
 function resolveChildName(
@@ -65,12 +100,37 @@ function resolveChildName(
     return { childId: null, rawChildName: null };
   }
 
-  const match = children.find((c) => c.name.trim().toLowerCase() === normalized);
+  // Tier 1: exact
+  const exact = children.find((c) => c.name.trim().toLowerCase() === normalized);
+  if (exact) return { childId: exact.id, rawChildName: rawName };
 
-  return {
-    childId:      match?.id ?? null,
-    rawChildName: rawName, // always preserve the original for debugging
-  };
+  // Tier 2: first-name match
+  const firstNameMatch = children.find((c) => {
+    const childFirst = c.name.trim().toLowerCase().split(/\s+/)[0];
+    const rawFirst   = normalized.split(/\s+/)[0];
+    return childFirst === normalized || rawFirst === childFirst;
+  });
+  if (firstNameMatch) return { childId: firstNameMatch.id, rawChildName: rawName };
+
+  // Tier 3: substring containment (e.g. "Emma" in "Emma Johnson")
+  const substringMatch = children.find((c) => {
+    const cn = c.name.trim().toLowerCase();
+    return cn.includes(normalized) || normalized.includes(cn);
+  });
+  if (substringMatch) return { childId: substringMatch.id, rawChildName: rawName };
+
+  // Tier 4: fuzzy on any name token (Levenshtein ≤ 2, tokens must be ≥ 4 chars)
+  const rawTokens   = normalized.split(/\s+/);
+  const fuzzyMatch  = children.find((c) => {
+    const childTokens = c.name.trim().toLowerCase().split(/\s+/);
+    return childTokens.some((ct) =>
+      rawTokens.some((rt) => ct.length >= 4 && rt.length >= 4 && levenshtein(ct, rt) <= 2)
+    );
+  });
+  if (fuzzyMatch) return { childId: fuzzyMatch.id, rawChildName: rawName };
+
+  // No match — preserve raw for debugging
+  return { childId: null, rawChildName: rawName };
 }
 
 // ── Resolution helpers ────────────────────────────────────────────────────
@@ -141,7 +201,7 @@ export async function extractFromEmail(
     subject,
     body,
     children,
-    model = "gpt-5.4-nano",
+    model = "gpt-4.1-nano",
   } = params;
 
   const log = logger.child({ emailId, service: "extraction" });
@@ -162,7 +222,7 @@ export async function extractFromEmail(
       response_format: { type: "json_object" },
       messages: [
         { role: "system",  content: SYSTEM_PROMPT },
-        { role: "user",    content: buildUserMessage(subject, body) },
+        { role: "user",    content: buildUserMessage(subject, body, children.map((c) => c.name)) },
       ],
     });
 
