@@ -20,6 +20,7 @@ import { getSupabaseClient } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 import { runExtractionAndSave } from "../lib/process-email.js";
 import { SEED_FIXTURES } from "../lib/dev-seeds.js";
+import { ingestNewGmailMessages } from "../lib/gmail-ingest.js";
 
 const router = Router();
 
@@ -237,6 +238,54 @@ router.get("/dev/seed", requireAuth, requireDevAccess, async (_req: Request, res
     .order("created_at", { ascending: false });
 
   if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  res.json({ count: data?.length ?? 0, emails: data ?? [] });
+});
+
+// ── POST /dev/gmail-sync ──────────────────────────────────────────────────
+//
+// Manually trigger a Gmail inbox poll. Requires auth + dev access.
+// This is distinct from POST /api/cron/gmail-sync (which requires CRON_SECRET)
+// so dev users can trigger syncs from the browser without the cron secret.
+
+router.post("/dev/gmail-sync", requireAuth, requireDevAccess, async (_req: Request, res: Response) => {
+  const log = logger.child({ route: "POST /dev/gmail-sync" });
+  log.info("Manual Gmail sync triggered via dev route");
+
+  try {
+    const result = await ingestNewGmailMessages();
+    log.info(result, "Manual Gmail sync complete");
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error({ err }, "Manual Gmail sync failed");
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── GET /dev/gmail-inbox ──────────────────────────────────────────────────
+//
+// Returns the 20 most recently ingested Gmail messages (emails with a
+// source_message_id set, excluding dev seed fixtures).
+// Used to inspect what the last sync pulled in.
+
+router.get("/dev/gmail-inbox", requireAuth, requireDevAccess, async (_req: Request, res: Response) => {
+  const sb  = getSupabaseClient();
+  const log = logger.child({ route: "GET /dev/gmail-inbox" });
+
+  const { data, error } = await sb
+    .from("emails")
+    .select("id, subject, sender, processing_status, source_message_id, created_at")
+    .not("source_message_id", "is", null)
+    .is("raw_payload", null) // exclude seed fixtures (they have raw_payload set)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    log.error({ error }, "Failed to query Gmail-ingested emails");
     res.status(500).json({ error: error.message });
     return;
   }

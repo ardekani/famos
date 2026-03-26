@@ -23,6 +23,10 @@ import {
   ExternalLink,
   BookOpen,
   Zap,
+  RefreshCw,
+  Inbox,
+  MailCheck,
+  MailX,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -582,6 +586,193 @@ function ResultsPanel({ result, subject }: { result: IngestResult; subject: stri
   );
 }
 
+// ── Gmail Sync Panel ───────────────────────────────────────────────────────
+
+interface GmailSyncResult {
+  processed: number;
+  skipped: number;
+  errors: number;
+  error?: string;
+}
+
+interface GmailEmail {
+  id: string;
+  subject: string;
+  sender: string;
+  processing_status: string;
+  source_message_id: string | null;
+  created_at: string;
+}
+
+function GmailSyncPanel() {
+  const [syncing, setSyncing]       = useState(false);
+  const [syncResult, setSyncResult] = useState<GmailSyncResult | null>(null);
+  const [syncError, setSyncError]   = useState<string | null>(null);
+  const [emails, setEmails]         = useState<GmailEmail[]>([]);
+  const [loadingEmails, setLoadingEmails] = useState(false);
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    setSyncError(null);
+
+    try {
+      const res  = await apiFetch("/api/dev/gmail-sync", { method: "POST" });
+      const json = await res.json() as GmailSyncResult;
+
+      if (!res.ok) {
+        setSyncError(json.error ?? `HTTP ${res.status}`);
+      } else {
+        setSyncResult(json);
+        await loadEmails();
+      }
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const loadEmails = async () => {
+    setLoadingEmails(true);
+    try {
+      const res  = await apiFetch("/api/dev/gmail-inbox");
+      const json = await res.json() as { emails: GmailEmail[] };
+      setEmails(json.emails ?? []);
+    } catch {
+      // Non-fatal — inbox list is optional
+    } finally {
+      setLoadingEmails(false);
+    }
+  };
+
+  const statusColor = (status: string) => {
+    if (status === "processed") return "text-green-600 bg-green-50";
+    if (status === "failed")    return "text-red-600 bg-red-50";
+    return "text-amber-600 bg-amber-50";
+  };
+
+  return (
+    <div className="mb-8 rounded-xl border border-border bg-card p-5 shadow-xs">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Inbox className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">Gmail Sync</span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            inbox@famops.app
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadEmails}
+            disabled={loadingEmails}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${loadingEmails ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          <button
+            onClick={triggerSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {syncing ? (
+              <><Loader2 className="h-3 w-3 animate-spin" />Syncing…</>
+            ) : (
+              <><RefreshCw className="h-3 w-3" />Sync now</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Last sync result */}
+      {syncError && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+          <MailX className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-700">Sync failed</p>
+            <p className="text-xs text-red-600 font-mono mt-0.5">{syncError}</p>
+            {syncError.includes("GMAIL_CLIENT_EMAIL") || syncError.includes("not configured") ? (
+              <p className="text-xs text-red-500 mt-1">
+                Add <code className="bg-red-100 px-1 rounded">GMAIL_CLIENT_EMAIL</code> and{" "}
+                <code className="bg-red-100 px-1 rounded">GMAIL_PRIVATE_KEY</code> to Replit secrets.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {syncResult && !syncError && (
+        <div className="mb-4 flex items-center gap-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5">
+          <MailCheck className="h-4 w-4 text-green-600 shrink-0" />
+          <div className="flex gap-4 text-xs">
+            <span className="font-semibold text-green-700">{syncResult.processed} processed</span>
+            <span className="text-muted-foreground">{syncResult.skipped} skipped</span>
+            {syncResult.errors > 0 && (
+              <span className="font-semibold text-red-600">{syncResult.errors} errors</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Recent ingested emails */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Recently ingested via Gmail
+          </p>
+          {emails.length === 0 && !loadingEmails && (
+            <button
+              onClick={loadEmails}
+              className="text-[11px] text-primary underline underline-offset-2 hover:opacity-80"
+            >
+              Load
+            </button>
+          )}
+        </div>
+
+        {loadingEmails && (
+          <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Loading…
+          </div>
+        )}
+
+        {!loadingEmails && emails.length === 0 && (
+          <p className="text-xs text-muted-foreground py-2">
+            No Gmail-ingested emails yet. Run a sync or configure Gmail credentials first.
+          </p>
+        )}
+
+        {emails.length > 0 && (
+          <ul className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+            {emails.map((em) => (
+              <li key={em.id} className="flex items-start justify-between gap-3 px-3 py-2.5 bg-card hover:bg-muted/30 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-foreground truncate">{em.subject}</p>
+                  <p className="text-[11px] text-muted-foreground truncate mt-0.5">{em.sender}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${statusColor(em.processing_status)}`}>
+                    {em.processing_status}
+                  </span>
+                  <a
+                    href={`/emails/${em.id}`}
+                    className="flex items-center gap-0.5 text-[10px] text-primary hover:underline"
+                  >
+                    view <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function TestEmailPage() {
@@ -640,6 +831,9 @@ export default function TestEmailPage() {
 
       {/* Supabase check */}
       <SupabaseCheck />
+
+      {/* Gmail sync */}
+      <GmailSyncPanel />
 
       {/* Divider */}
       <div className="mb-8 border-t border-border" />
