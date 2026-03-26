@@ -1,12 +1,15 @@
 /**
- * Dashboard — the parent command center.
+ * Dashboard — your school command center.
  *
- * Sections:
- *   1. Header          — greeting, current date, urgent count
- *   2. Today           — events + deadlines happening today
- *   3. Action Needed   — open action items, checkable, sorted by priority
- *   4. This Week       — calendar-style event list for the week
- *   5. Recent Emails   — last 6 parsed emails with status badges
+ * Layout:
+ *   1. Header           — greeting, date
+ *   2. Week at a Glance — stat summary card
+ *   3. OnboardingBanner — setup steps for new users
+ *   4. Action Needed    — open action items, checkable, sorted by urgency
+ *   5. This Week        — merged events + deadlines timeline (including today)
+ *   6. By Child         — per-child summary cards
+ *   7. School Emails    — recent emails, quiet/secondary
+ *   8. Daily Digest     — generate/send utility
  */
 
 import React, { useState } from "react";
@@ -17,51 +20,58 @@ import {
   Clock,
   CheckCircle2,
   Circle,
-  AlertTriangle,
   Mail,
   ChevronRight,
   Inbox,
   PartyPopper,
   CalendarX,
-  Sparkles,
   FileText,
   RefreshCw,
   Loader2,
   ChevronDown,
   ChevronUp,
   Send,
+  Users,
+  GraduationCap,
 } from "lucide-react";
-import { getDashboardData, completeActionItem, getLatestDigest, getChildren } from "@/lib/queries";
+import {
+  getDashboardData,
+  completeActionItem,
+  getLatestDigest,
+  getChildren,
+} from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import type { EventWithChild, Deadline, ActionItemWithChild, Email, Digest } from "@/types/database";
+import type {
+  EventWithChild,
+  Deadline,
+  ActionItemWithChild,
+  Email,
+  Child,
+} from "@/types/database";
 import { Link } from "wouter";
 import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
 
-// ── Date utilities ────────────────────────────────────────────────────────
+// ── Date utilities ─────────────────────────────────────────────────────────
 
-/** Returns today as an ISO date string: "2026-03-25" */
 function todayISO(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-/** Returns "2026-03-25" for a date shifted by N days from today */
 function shiftDate(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString().split("T")[0];
 }
 
-/** Monday of the current week */
 function weekStart(): string {
   const d = new Date();
-  const day = d.getDay(); // 0 = Sun
+  const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().split("T")[0];
 }
 
-/** Sunday of the current week */
 function weekEnd(): string {
   const d = new Date();
   const day = d.getDay();
@@ -70,7 +80,6 @@ function weekEnd(): string {
   return d.toISOString().split("T")[0];
 }
 
-/** Format an ISO date string as a human-readable label */
 function formatDate(iso: string | null): string {
   if (!iso) return "No date";
   const today = todayISO();
@@ -78,10 +87,13 @@ function formatDate(iso: string | null): string {
   if (iso === today) return "Today";
   if (iso === tomorrow) return "Tomorrow";
   const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
-/** Format a 24-h time string "HH:MM:SS" → "6:30 PM" */
 function formatTime(t: string | null): string {
   if (!t) return "";
   const [h, m] = t.split(":").map(Number);
@@ -90,7 +102,6 @@ function formatTime(t: string | null): string {
   return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-/** Relative time for emails: "2 hours ago", "Yesterday", etc. */
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins  = Math.floor(diff / 60_000);
@@ -103,7 +114,6 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-/** Greeting based on hour of day */
 function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -111,7 +121,7 @@ function greeting(): string {
   return "Good evening";
 }
 
-// ── Small shared components ───────────────────────────────────────────────
+// ── Shared components ──────────────────────────────────────────────────────
 
 function SectionHeading({
   icon,
@@ -123,7 +133,7 @@ function SectionHeading({
   count?: number;
 }) {
   return (
-    <div className="mb-4 flex items-center gap-2">
+    <div className="mb-3 flex items-center gap-2">
       <span className="text-primary">{icon}</span>
       <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
         {label}
@@ -137,7 +147,13 @@ function SectionHeading({
   );
 }
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Card({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`rounded-xl border border-border bg-card shadow-xs ${className}`}>
       {children}
@@ -164,100 +180,90 @@ function EmptyState({
   sub?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 py-10 text-center">
-      <div className="mb-3 text-muted-foreground/40">{icon}</div>
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
+      <div className="mb-3 text-muted-foreground/30">{icon}</div>
       <p className="text-sm font-medium text-muted-foreground">{heading}</p>
       {sub && <p className="mt-1 text-xs text-muted-foreground/70">{sub}</p>}
     </div>
   );
 }
 
-// ── Section: Today ────────────────────────────────────────────────────────
+// ── Section: Week at a Glance ──────────────────────────────────────────────
 
-function TodaySection({
+function WeekGlanceCard({
   events,
   deadlines,
+  actionItems,
+  weekLabel,
 }: {
   events: EventWithChild[];
   deadlines: Deadline[];
+  actionItems: ActionItemWithChild[];
+  weekLabel: string;
 }) {
-  const today = todayISO();
-  const todayEvents    = events.filter((e) => e.date === today);
-  const todayDeadlines = deadlines.filter((d) => d.date === today);
+  const urgentCount = actionItems.filter((a) => a.priority === "high").length;
+  const isCalm =
+    events.length === 0 &&
+    actionItems.length === 0 &&
+    deadlines.length === 0;
 
-  if (todayEvents.length === 0 && todayDeadlines.length === 0) {
-    return (
-      <section className="mb-8">
-        <SectionHeading icon={<Sparkles className="h-4 w-4" />} label="Today" />
-        <Card className="flex items-center gap-3 p-4">
-          <PartyPopper className="h-5 w-5 shrink-0 text-green-500" />
-          <p className="text-sm text-muted-foreground">
-            Nothing scheduled for today. Enjoy the calm!
-          </p>
-        </Card>
-      </section>
-    );
-  }
+  const headline = isCalm
+    ? "You're all clear — enjoy the quiet week."
+    : urgentCount > 0
+    ? `${urgentCount} thing${urgentCount > 1 ? "s" : ""} need${urgentCount === 1 ? "s" : ""} your attention.`
+    : "Things are on track this week.";
 
   return (
-    <section className="mb-8">
-      <SectionHeading
-        icon={<Sparkles className="h-4 w-4" />}
-        label="Today"
-        count={todayEvents.length + todayDeadlines.length}
-      />
-      <div className="space-y-3">
-        {todayEvents.map((ev) => (
-          <Card key={ev.id} className="flex items-start justify-between p-4">
-            <div className="flex items-start gap-3">
-              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <div>
-                <p className="text-sm font-semibold text-foreground">{ev.title}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {ev.start_time && (
-                    <span className="text-xs text-muted-foreground">
-                      {formatTime(ev.start_time)}
-                      {ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
-                    </span>
-                  )}
-                  {ev.location && (
-                    <span className="text-xs text-muted-foreground">· {ev.location}</span>
-                  )}
-                  <ChildTag name={ev.child?.name ?? ev.raw_child_name} />
-                </div>
-              </div>
-            </div>
-            <Link
-              href={`/emails/${ev.source_email_id}`}
-              className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
+    <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-primary/60">
+        This week · {weekLabel}
+      </p>
+      <p className="mt-1 text-base font-semibold text-foreground">{headline}</p>
+
+      {!isCalm && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {events.length > 0 && (
+            <span className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs">
+              <CalendarDays className="h-3 w-3 text-primary" />
+              <span className="font-semibold text-foreground">{events.length}</span>
+              <span className="text-muted-foreground">
+                {events.length === 1 ? "event" : "events"}
+              </span>
+            </span>
+          )}
+          {actionItems.length > 0 && (
+            <span
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${
+                urgentCount > 0
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-border bg-card"
+              }`}
             >
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-          </Card>
-        ))}
-        {todayDeadlines.map((d) => (
-          <Card key={d.id} className="flex items-start justify-between border-amber-200 p-4">
-            <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <div>
-                <p className="text-sm font-semibold text-foreground">{d.title}</p>
-                <p className="mt-0.5 text-xs font-medium text-amber-600">Due today</p>
-              </div>
-            </div>
-            <Link
-              href={`/emails/${d.source_email_id}`}
-              className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-          </Card>
-        ))}
-      </div>
-    </section>
+              <CheckCircle2
+                className={`h-3 w-3 ${urgentCount > 0 ? "text-red-500" : "text-primary"}`}
+              />
+              <span className="font-semibold">{actionItems.length}</span>
+              <span className={urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}>
+                {actionItems.length === 1 ? "action needed" : "actions needed"}
+              </span>
+            </span>
+          )}
+          {deadlines.length > 0 && (
+            <span className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+              <Clock className="h-3 w-3 text-amber-500" />
+              <span className="font-semibold">{deadlines.length}</span>
+              <span className="text-amber-600">
+                {deadlines.length === 1 ? "deadline" : "deadlines"}
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-// ── Section: Action Needed ────────────────────────────────────────────────
+// ── Section: Action Needed ─────────────────────────────────────────────────
 
 function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   const queryClient = useQueryClient();
@@ -277,85 +283,84 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   };
 
   const visible = items.filter((i) => !optimisticDone.has(i.id));
+  const high = visible.filter((i) => i.priority === "high");
+  const rest = visible.filter((i) => i.priority !== "high");
+  const sorted = [...high, ...rest];
+  const today = todayISO();
 
   return (
     <section className="mb-8">
       <SectionHeading
         icon={<CheckCircle2 className="h-4 w-4" />}
         label="Action Needed"
-        count={visible.length}
+        count={sorted.length}
       />
-      {visible.length === 0 ? (
-        <EmptyState
-          icon={<CheckCircle2 className="h-8 w-8" />}
-          heading="All caught up!"
-          sub="No pending action items. Great job."
-        />
+      {sorted.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50/60 p-4">
+          <PartyPopper className="h-5 w-5 shrink-0 text-green-500" />
+          <div>
+            <p className="text-sm font-semibold text-green-800">All caught up!</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              No actions pending. Well done.
+            </p>
+          </div>
+        </div>
       ) : (
-        <div className="space-y-2.5">
-          {visible.map((item) => {
+        <div className="space-y-2">
+          {sorted.map((item) => {
             const isHigh = item.priority === "high";
+            const isOverdue = item.due_date ? item.due_date < today : false;
+            const isDueToday = item.due_date === today;
             return (
-              <Card
+              <div
                 key={item.id}
-                className={`flex items-start gap-3 p-4 ${
-                  isHigh ? "border-red-200 bg-red-50/30" : ""
+                className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
+                  isHigh
+                    ? "border-red-200 bg-red-50/40"
+                    : "border-border bg-card"
                 }`}
               >
-                {/* Check button */}
                 <button
                   onClick={() => handleComplete(item.id)}
-                  className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-green-600"
+                  className="mt-0.5 shrink-0 text-muted-foreground/40 transition-colors hover:text-green-600"
                   aria-label="Mark as done"
                 >
                   <Circle className="h-4 w-4" />
                 </button>
 
-                {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className={`text-sm font-medium text-foreground ${isHigh ? "font-semibold" : ""}`}>
-                      {item.task}
-                    </p>
-                    {isHigh && (
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-                    )}
-                  </div>
+                  <p
+                    className={`text-sm text-foreground leading-snug ${
+                      isHigh ? "font-semibold" : "font-medium"
+                    }`}
+                  >
+                    {item.task}
+                  </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     {item.due_date && (
                       <span
-                        className={`text-xs ${
-                          item.due_date <= todayISO()
-                            ? "font-semibold text-red-600"
+                        className={`text-xs font-medium ${
+                          isOverdue
+                            ? "text-red-600"
+                            : isDueToday
+                            ? "text-amber-600"
                             : "text-muted-foreground"
                         }`}
                       >
-                        Due {formatDate(item.due_date)}
+                        {isOverdue ? "Overdue · " : ""}Due {formatDate(item.due_date)}
                       </span>
                     )}
                     <ChildTag name={item.child?.name ?? item.raw_child_name} />
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        isHigh
-                          ? "bg-red-100 text-red-700"
-                          : item.priority === "medium"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {item.priority}
-                    </span>
                   </div>
                 </div>
 
-                {/* Source email link */}
                 <Link
                   href={`/emails/${item.source_email_id}`}
-                  className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-primary"
+                  className="mt-0.5 shrink-0 text-muted-foreground/30 transition-colors hover:text-primary"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Link>
-              </Card>
+              </div>
             );
           })}
         </div>
@@ -364,7 +369,7 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   );
 }
 
-// ── Section: This Week ────────────────────────────────────────────────────
+// ── Section: This Week ─────────────────────────────────────────────────────
 
 function ThisWeekSection({
   events,
@@ -375,14 +380,17 @@ function ThisWeekSection({
 }) {
   const today = todayISO();
 
-  // Merge events and deadlines into a single sorted list
   type WeekItem =
     | { kind: "event"; date: string | null; item: EventWithChild }
     | { kind: "deadline"; date: string | null; item: Deadline };
 
   const allItems: WeekItem[] = [
-    ...events.filter((e) => e.date !== today).map((e) => ({ kind: "event" as const, date: e.date, item: e })),
-    ...deadlines.filter((d) => d.date !== today).map((d) => ({ kind: "deadline" as const, date: d.date, item: d })),
+    ...events.map((e) => ({ kind: "event" as const, date: e.date, item: e })),
+    ...deadlines.map((d) => ({
+      kind: "deadline" as const,
+      date: d.date,
+      item: d,
+    })),
   ].sort((a, b) => {
     if (!a.date && !b.date) return 0;
     if (!a.date) return 1;
@@ -393,22 +401,29 @@ function ThisWeekSection({
   if (allItems.length === 0) {
     return (
       <section className="mb-8">
-        <SectionHeading icon={<CalendarDays className="h-4 w-4" />} label="This Week" />
+        <SectionHeading
+          icon={<CalendarDays className="h-4 w-4" />}
+          label="This Week"
+        />
         <EmptyState
           icon={<CalendarX className="h-8 w-8" />}
-          heading="Nothing else on the calendar this week"
-          sub="Events from forwarded emails will appear here."
+          heading="Nothing on the calendar this week"
+          sub="Events from forwarded school emails will appear here."
         />
       </section>
     );
   }
 
-  // Group by date label
-  const grouped = new Map<string, WeekItem[]>();
-  for (const item of allItems) {
-    const label = item.date ? formatDate(item.date) : "No date";
-    if (!grouped.has(label)) grouped.set(label, []);
-    grouped.get(label)!.push(item);
+  // Group by date key
+  type GroupEntry = { label: string; isToday: boolean; items: WeekItem[] };
+  const grouped = new Map<string, GroupEntry>();
+  for (const wi of allItems) {
+    const key = wi.date ?? "no-date";
+    const isToday = wi.date === today;
+    if (!grouped.has(key)) {
+      grouped.set(key, { label: formatDate(wi.date), isToday, items: [] });
+    }
+    grouped.get(key)!.items.push(wi);
   }
 
   return (
@@ -418,30 +433,51 @@ function ThisWeekSection({
         label="This Week"
         count={allItems.length}
       />
-      <div className="space-y-1">
-        {[...grouped.entries()].map(([dateLabel, items]) => (
-          <div key={dateLabel}>
+      <div className="space-y-5">
+        {[...grouped.values()].map(({ label, isToday, items }) => (
+          <div key={label}>
             {/* Day header */}
-            <p className="mb-1.5 mt-4 first:mt-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {dateLabel}
-            </p>
+            <div className="mb-2 flex items-center gap-2">
+              <p
+                className={`text-xs font-semibold uppercase tracking-wide ${
+                  isToday ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
+                {label}
+              </p>
+              {isToday && (
+                <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  Today
+                </span>
+              )}
+            </div>
+
             <div className="space-y-2">
               {items.map((row) =>
                 row.kind === "event" ? (
                   <Card
                     key={row.item.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      isToday ? "border-primary/25 bg-primary/5" : ""
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      <CalendarDays
+                        className={`h-3.5 w-3.5 shrink-0 ${
+                          isToday ? "text-primary" : "text-muted-foreground"
+                        }`}
+                      />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">
                           {row.item.title}
                         </p>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                           {row.item.start_time && (
                             <span className="text-xs text-muted-foreground">
                               {formatTime(row.item.start_time)}
+                              {row.item.end_time
+                                ? ` – ${formatTime(row.item.end_time)}`
+                                : ""}
                             </span>
                           )}
                           {row.item.location && (
@@ -449,13 +485,17 @@ function ThisWeekSection({
                               · {row.item.location}
                             </span>
                           )}
-                          <ChildTag name={row.item.child?.name ?? row.item.raw_child_name} />
+                          <ChildTag
+                            name={
+                              row.item.child?.name ?? row.item.raw_child_name
+                            }
+                          />
                         </div>
                       </div>
                     </div>
                     <Link
                       href={`/emails/${row.item.source_email_id}`}
-                      className="shrink-0 text-muted-foreground hover:text-primary"
+                      className="shrink-0 text-muted-foreground/40 hover:text-primary"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Link>
@@ -463,7 +503,11 @@ function ThisWeekSection({
                 ) : (
                   <Card
                     key={row.item.id}
-                    className="flex items-center justify-between gap-3 border-amber-200 bg-amber-50/20 px-4 py-3"
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      isToday
+                        ? "border-amber-300 bg-amber-50/50"
+                        : "border-amber-200 bg-amber-50/20"
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <Clock className="h-3.5 w-3.5 shrink-0 text-amber-500" />
@@ -471,12 +515,14 @@ function ThisWeekSection({
                         <p className="truncate text-sm font-medium text-foreground">
                           {row.item.title}
                         </p>
-                        <p className="text-xs text-amber-600">Deadline</p>
+                        <p className="text-xs text-amber-600">
+                          {isToday ? "Due today" : "Deadline"}
+                        </p>
                       </div>
                     </div>
                     <Link
                       href={`/emails/${row.item.source_email_id}`}
-                      className="shrink-0 text-muted-foreground hover:text-primary"
+                      className="shrink-0 text-muted-foreground/40 hover:text-primary"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Link>
@@ -491,32 +537,160 @@ function ThisWeekSection({
   );
 }
 
-// ── Section: Recent Emails ────────────────────────────────────────────────
+// ── Section: By Child ──────────────────────────────────────────────────────
 
-const statusStyles: Record<string, string> = {
-  processed: "bg-green-50 text-green-700",
-  failed:    "bg-red-50 text-red-700",
-  pending:   "bg-amber-50 text-amber-700",
-};
+function ByChildSection({
+  children,
+  events,
+  deadlines,
+  actionItems,
+}: {
+  children: Child[];
+  events: EventWithChild[];
+  deadlines: Deadline[];
+  actionItems: ActionItemWithChild[];
+}) {
+  const today = todayISO();
 
-const statusLabels: Record<string, string> = {
-  processed: "Parsed",
-  failed:    "Failed",
-  pending:   "Pending",
-};
+  if (children.length === 0) return null;
 
-function RecentEmailsSection({ emails }: { emails: Email[] }) {
   return (
     <section className="mb-8">
-      <SectionHeading icon={<Mail className="h-4 w-4" />} label="Recently Parsed Emails" />
+      <SectionHeading
+        icon={<Users className="h-4 w-4" />}
+        label="By Child"
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        {children.map((child) => {
+          const childEvents = events
+            .filter((e) => e.child_id === child.id && e.date && e.date >= today)
+            .slice(0, 3);
+          const childDeadlines = deadlines
+            .filter((d) => d.child_id === child.id && d.date && d.date >= today)
+            .slice(0, 2);
+          const childActions = actionItems
+            .filter((a) => a.child_id === child.id)
+            .slice(0, 4);
+
+          const hasItems =
+            childEvents.length > 0 ||
+            childDeadlines.length > 0 ||
+            childActions.length > 0;
+
+          const initial = child.name.charAt(0).toUpperCase();
+
+          return (
+            <Card key={child.id} className="overflow-hidden">
+              {/* Child header */}
+              <div className="flex items-center gap-3 border-b border-border/50 px-4 py-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                  {initial}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    {child.name}
+                  </p>
+                  {child.school_name && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {child.school_name}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Child items */}
+              {!hasItems ? (
+                <div className="px-4 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    Nothing on the schedule — all clear!
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/40">
+                  {childActions.map((action) => (
+                    <li
+                      key={action.id}
+                      className="flex items-start gap-2.5 px-4 py-2.5"
+                    >
+                      <Circle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/40" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground leading-snug">
+                          {action.task}
+                        </p>
+                        {action.due_date && (
+                          <p
+                            className={`mt-0.5 text-xs ${
+                              action.due_date <= today
+                                ? "font-medium text-amber-600"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            Due {formatDate(action.due_date)}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                  {childEvents.map((ev) => (
+                    <li
+                      key={ev.id}
+                      className="flex items-start gap-2.5 px-4 py-2.5"
+                    >
+                      <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/40" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground leading-snug">
+                          {ev.title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatDate(ev.date)}
+                          {ev.start_time ? ` · ${formatTime(ev.start_time)}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                  {childDeadlines.map((dl) => (
+                    <li
+                      key={dl.id}
+                      className="flex items-start gap-2.5 px-4 py-2.5"
+                    >
+                      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground leading-snug">
+                          {dl.title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-amber-600">
+                          Due {formatDate(dl.date)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ── Section: School Emails ─────────────────────────────────────────────────
+
+function SchoolEmailsSection({ emails }: { emails: Email[] }) {
+  return (
+    <section className="mb-8">
+      <SectionHeading icon={<Mail className="h-4 w-4" />} label="School Emails" />
       {emails.length === 0 ? (
         <EmptyState
           icon={<Inbox className="h-8 w-8" />}
-          heading="No emails yet"
+          heading="No emails received yet"
           sub={
             <>
               Forward a school email to get started.{" "}
-              <Link href="/setup/gmail-forwarding" className="text-primary underline-offset-2 hover:underline">
+              <Link
+                href="/setup/gmail-forwarding"
+                className="text-primary underline-offset-2 hover:underline"
+              >
                 Set up forwarding
               </Link>
             </>
@@ -529,26 +703,27 @@ function RecentEmailsSection({ emails }: { emails: Email[] }) {
               <li key={email.id}>
                 <Link
                   href={`/emails/${email.id}`}
-                  className="flex items-start justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-muted/40"
+                  className="flex items-start justify-between gap-4 px-4 py-3 transition-colors hover:bg-muted/30"
                 >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {email.subject}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {email.sender ?? "Unknown sender"} · {relativeTime(email.received_at)}
-                      </p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {email.subject}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {email.sender ?? "Unknown sender"} ·{" "}
+                      {relativeTime(email.received_at)}
+                    </p>
                   </div>
-                  <span
-                    className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      statusStyles[email.processing_status] ?? "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {statusLabels[email.processing_status] ?? email.processing_status}
-                  </span>
+                  {email.processing_status === "pending" && (
+                    <span className="mt-0.5 shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                      Processing
+                    </span>
+                  )}
+                  {email.processing_status === "failed" && (
+                    <span className="mt-0.5 shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                      Failed
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}
@@ -567,7 +742,7 @@ function RecentEmailsSection({ emails }: { emails: Email[] }) {
   );
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────
+// ── Loading skeleton ───────────────────────────────────────────────────────
 
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg bg-muted ${className}`} />;
@@ -576,10 +751,7 @@ function Skeleton({ className = "" }: { className?: string }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
-      <div className="space-y-2">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-4 w-36" />
-      </div>
+      <Skeleton className="h-20 w-full rounded-xl" />
       {[1, 2, 3].map((i) => (
         <div key={i} className="space-y-3">
           <Skeleton className="h-4 w-28" />
@@ -591,37 +763,43 @@ function DashboardSkeleton() {
   );
 }
 
-// ── Digest card ───────────────────────────────────────────────────────────
+// ── Daily Digest card ──────────────────────────────────────────────────────
 
 interface DigestJson {
   date: string;
   summary: { urgent_count: number; total_actions: number; is_calm: boolean };
-  action_needed: { task: string; priority: string; due_date: string | null; child_name: string | null }[];
+  action_needed: {
+    task: string;
+    priority: string;
+    due_date: string | null;
+    child_name: string | null;
+  }[];
 }
 
 function DigestCard({ userId }: { userId: string }) {
   const queryClient = useQueryClient();
-  const { user }    = useAuth();
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
 
   const { data: digest, isLoading } = useQuery({
-    queryKey:  ["digest", userId],
-    queryFn:   () => getLatestDigest(userId),
+    queryKey: ["digest", userId],
+    queryFn: () => getLatestDigest(userId),
     staleTime: 60_000,
   });
 
-  // ── Generate ──────────────────────────────────────────────
   const generateMutation = useMutation({
     mutationFn: async () => {
       const today = new Date().toISOString().split("T")[0];
-      const res   = await apiFetch("/api/digest/generate", {
+      const res = await apiFetch("/api/digest/generate", {
         method: "POST",
-        body:   JSON.stringify({ date: today }),
+        body: JSON.stringify({ date: today }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Generation failed");
+        throw new Error(
+          (err as { error?: string }).error ?? "Generation failed"
+        );
       }
       return res.json();
     },
@@ -631,10 +809,6 @@ function DigestCard({ userId }: { userId: string }) {
     },
   });
 
-  // ── Send ──────────────────────────────────────────────────
-  // No email is passed in the body — the server reads it from the
-  // verified Supabase token (req.userEmail), so only the authenticated
-  // user's email is ever used.
   const sendMutation = useMutation({
     mutationFn: async () => {
       const res = await apiFetch("/api/digest/send", { method: "POST" });
@@ -650,30 +824,29 @@ function DigestCard({ userId }: { userId: string }) {
     },
   });
 
-  const relativeTime = (iso: string) => {
+  const digestRelative = (iso: string) => {
     const diffMs = Date.now() - new Date(iso).getTime();
-    const mins   = Math.floor(diffMs / 60_000);
-    if (mins < 1)   return "just now";
-    if (mins < 60)  return `${mins}m ago`;
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24)   return `${hrs}h ago`;
+    if (hrs < 24) return `${hrs}h ago`;
     return `${Math.floor(hrs / 24)}d ago`;
   };
 
   const json = digest?.content_json as unknown as DigestJson | null;
-
-  // True if today's digest was already generated (digest_date matches today)
-  const today          = new Date().toISOString().split("T")[0];
-  const isToday        = digest?.digest_date === today;
+  const today = new Date().toISOString().split("T")[0];
+  const isToday = digest?.digest_date === today;
   const alreadySentToday = digest?.sent_at && isToday;
 
   return (
     <div className="mb-8 rounded-xl border border-border bg-card shadow-xs">
-      {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <FileText className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">Daily Digest</span>
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">
+            Daily email digest
+          </span>
           {digest && json && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
               {json.summary.is_calm
@@ -682,8 +855,8 @@ function DigestCard({ userId }: { userId: string }) {
             </span>
           )}
           {digest && (
-            <span className="text-[11px] text-muted-foreground/60">
-              {relativeTime(digest.created_at)}
+            <span className="text-[11px] text-muted-foreground/50">
+              {digestRelative(digest.created_at)}
             </span>
           )}
           {alreadySentToday && (
@@ -695,70 +868,87 @@ function DigestCard({ userId }: { userId: string }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Send to my email */}
           {digest && !alreadySentToday && (
             <button
               onClick={() => sendMutation.mutate()}
               disabled={sendMutation.isPending || generateMutation.isPending}
               title={`Send to ${user?.email ?? "your email"}`}
-              className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {sendMutation.isPending
-                ? <><Loader2 className="h-3 w-3 animate-spin" />Sending…</>
-                : <><Send className="h-3 w-3" />Email me</>}
+              {sendMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Send className="h-3 w-3" />
+                  Email me
+                </>
+              )}
             </button>
           )}
 
-          {/* Generate / Regenerate */}
           <button
             onClick={() => generateMutation.mutate()}
             disabled={generateMutation.isPending || isLoading}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {generateMutation.isPending
-              ? <><Loader2 className="h-3 w-3 animate-spin" />Generating…</>
-              : <><RefreshCw className="h-3 w-3" />{digest ? "Regenerate" : "Generate"}</>}
+            {generateMutation.isPending ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3 w-3" />
+                {digest ? "Regenerate" : "Generate"}
+              </>
+            )}
           </button>
 
-          {/* Expand / collapse */}
           {digest && (
             <button
-              onClick={() => setExpanded(v => !v)}
+              onClick={() => setExpanded((v) => !v)}
               className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
               aria-label={expanded ? "Collapse digest" : "Expand digest"}
             >
-              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {expanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
             </button>
           )}
         </div>
       </div>
 
-      {/* Scheduling note — honest about automation not being live */}
       <div className="border-t border-border/60 bg-muted/20 px-4 py-2">
         <p className="text-[11px] text-muted-foreground">
-          Automated daily delivery is not yet active — generate your digest manually and
-          click <strong>Email me</strong> to send it to{" "}
+          Automated daily delivery is not yet active — generate your digest
+          manually and click <strong>Email me</strong> to send it to{" "}
           <span className="font-medium">{user?.email ?? "your email"}</span>.
         </p>
       </div>
 
-      {/* Errors */}
       {generateMutation.isError && (
         <div className="border-t border-red-100 bg-red-50 px-4 py-2">
           <p className="text-xs text-red-700">
-            {generateMutation.error instanceof Error ? generateMutation.error.message : "Generation failed"}
+            {generateMutation.error instanceof Error
+              ? generateMutation.error.message
+              : "Generation failed"}
           </p>
         </div>
       )}
       {sendMutation.isError && (
         <div className="border-t border-red-100 bg-red-50 px-4 py-2">
           <p className="text-xs text-red-700">
-            {sendMutation.error instanceof Error ? sendMutation.error.message : "Send failed"}
+            {sendMutation.error instanceof Error
+              ? sendMutation.error.message
+              : "Send failed"}
           </p>
         </div>
       )}
-
-      {/* Send success toast */}
       {sendSuccess && (
         <div className="border-t border-green-100 bg-green-50 px-4 py-2">
           <p className="text-xs font-medium text-green-800">
@@ -767,14 +957,12 @@ function DigestCard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* No digest yet */}
       {!isLoading && !digest && !generateMutation.isPending && (
         <p className="px-4 py-3 text-xs italic text-muted-foreground">
           No digest yet — click Generate to build one from your current data.
         </p>
       )}
 
-      {/* Digest body (collapsible) */}
       {digest && expanded && (
         <div className="border-t border-border px-4 py-4">
           <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-muted-foreground">
@@ -786,35 +974,28 @@ function DigestCard({ userId }: { userId: string }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────
+// ── Main page ──────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const userId    = user!.id;
-  const start     = weekStart();
-  const end       = weekEnd();
-  const horizon   = shiftDate(28); // 4 weeks out for deadlines
+  const userId  = user!.id;
+  const start   = weekStart();
+  const end     = weekEnd();
+  const horizon = shiftDate(28);
 
   const { data, isLoading, error } = useQuery({
-    queryKey:    ["dashboard", userId, start, end],
-    queryFn:     () => getDashboardData(userId, start, end, horizon),
-    staleTime:   60_000,
-    retry:       1,
+    queryKey:  ["dashboard", userId, start, end],
+    queryFn:   () => getDashboardData(userId, start, end, horizon),
+    staleTime: 60_000,
+    retry:     1,
   });
 
   const { data: children = [], isLoading: childrenLoading } = useQuery({
-    queryKey: ["children", userId],
-    queryFn:  () => getChildren(userId),
+    queryKey:  ["children", userId],
+    queryFn:   () => getChildren(userId),
     staleTime: 60_000,
   });
 
-  // Derive first-name-like label from email (e.g. "alex@..." → "Alex")
-  const firstName = (() => {
-    const prefix = user?.email?.split("@")[0] ?? "";
-    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
-  })();
-
-  const today = todayISO();
   const weekLabel = (() => {
     const s = new Date(start + "T00:00:00");
     const e = new Date(end + "T00:00:00");
@@ -823,39 +1004,39 @@ export default function DashboardPage() {
     return `${fmt(s)} – ${fmt(e)}`;
   })();
 
-  const highPriorityCount =
-    data?.action_items.filter((a) => a.priority === "high").length ?? 0;
+  const firstName = (() => {
+    const prefix = user?.email?.split("@")[0] ?? "";
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  })();
 
   return (
     <Shell>
       {/* ── Header ── */}
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-0.5">
+          <GraduationCap className="h-5 w-5 text-primary" />
+          <h1 className="text-xl font-bold text-foreground">
             {greeting()}, {firstName}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month:   "long",
-              day:     "numeric",
-              year:    "numeric",
-            })}
-            <span className="mx-2 text-border">·</span>
-            Week of {weekLabel}
-          </p>
         </div>
-
-        {highPriorityCount > 0 && (
-          <span className="flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            {highPriorityCount} urgent {highPriorityCount === 1 ? "item" : "items"}
-          </span>
-        )}
+        <p className="text-sm text-muted-foreground ml-7">
+          {new Date().toLocaleDateString("en-US", {
+            weekday: "long",
+            month:   "long",
+            day:     "numeric",
+          })}
+        </p>
       </div>
 
-      {/* ── Daily Digest ── */}
-      <DigestCard userId={userId} />
+      {/* ── Week at a Glance ── */}
+      {data && (
+        <WeekGlanceCard
+          events={data.events}
+          deadlines={data.deadlines}
+          actionItems={data.action_items}
+          weekLabel={weekLabel}
+        />
+      )}
 
       {/* ── Onboarding banner ── */}
       <OnboardingBanner
@@ -868,7 +1049,7 @@ export default function DashboardPage() {
       {error && (
         <div className="mb-8 rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-medium text-red-800">
-            Could not load dashboard data.
+            Could not load your school plan.
           </p>
           <p className="mt-1 text-xs text-red-600">
             {error instanceof Error ? error.message : "Unknown error"}
@@ -882,11 +1063,6 @@ export default function DashboardPage() {
       {/* ── Content ── */}
       {data && (
         <>
-          <TodaySection
-            events={data.events}
-            deadlines={data.upcomingDeadlines}
-          />
-
           <ActionSection items={data.action_items} />
 
           <ThisWeekSection
@@ -894,10 +1070,19 @@ export default function DashboardPage() {
             deadlines={data.deadlines}
           />
 
-          <RecentEmailsSection emails={data.recentEmails} />
+          <ByChildSection
+            children={children}
+            events={data.events}
+            deadlines={data.upcomingDeadlines}
+            actionItems={data.action_items}
+          />
+
+          <SchoolEmailsSection emails={data.recentEmails} />
         </>
       )}
 
+      {/* ── Daily Digest (utility) ── */}
+      <DigestCard userId={userId} />
     </Shell>
   );
 }
