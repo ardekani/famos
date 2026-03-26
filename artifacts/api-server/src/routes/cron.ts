@@ -46,6 +46,7 @@ import { Router, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 import { getSupabaseClient } from "../lib/supabase.js";
 import { generateDigest, renderHtml } from "../lib/digest.js";
+import { ingestNewGmailMessages } from "../lib/gmail-ingest.js";
 
 const router = Router();
 
@@ -181,6 +182,34 @@ router.post("/cron/digest", async (req: Request, res: Response) => {
   logger.info({ ok, error }, "Cron digest job complete");
 
   res.json({ ok, error, total: results.length, results });
+});
+
+// ── POST /cron/gmail-sync ─────────────────────────────────────────────────
+//
+// Polls inbox@famops.app for new unread messages and ingests them into the
+// existing email pipeline. Safe to call repeatedly — duplicate messages are
+// skipped via source_message_id dedup.
+//
+// Schedule: every 10 minutes via cron-job.org or equivalent.
+// Manual test:
+//   curl -X POST https://<your-api>/api/cron/gmail-sync \
+//        -H "x-cron-secret: <CRON_SECRET value>"
+
+router.post("/cron/gmail-sync", async (req: Request, res: Response) => {
+  if (!requireCronSecret(req, res)) return;
+
+  const log = logger.child({ route: "cron/gmail-sync" });
+  log.info("Gmail sync cron started");
+
+  try {
+    const result = await ingestNewGmailMessages();
+    log.info(result, "Gmail sync cron complete");
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error({ err }, "Gmail sync cron failed");
+    res.status(500).json({ error: message });
+  }
 });
 
 export default router;

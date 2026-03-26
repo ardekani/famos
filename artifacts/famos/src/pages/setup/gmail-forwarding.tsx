@@ -23,7 +23,7 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const FORWARDING_ADDRESS = "school@in.famops.app";
+const FORWARDING_ADDRESS = "inbox@famops.app";
 
 const FILTER_QUERY =
   '(from:school OR from:teacher OR from:notifications) OR ("field trip" OR "permission slip" OR "PTA" OR "school")';

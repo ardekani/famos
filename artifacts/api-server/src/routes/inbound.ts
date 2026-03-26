@@ -78,8 +78,15 @@ async function findUserByEmail(email: string): Promise<{ id: string } | null> {
 }
 
 // ── POST /api/inbound/email/:token ────────────────────────────────────────
+//
+// BYPASSED: Gmail ingestion via POST /api/cron/gmail-sync is now the active
+// inbound path. This Postmark webhook is disabled but kept intact so it can
+// be re-enabled instantly if needed (remove the early return below).
 
 router.post("/inbound/email/:token", async (req: Request, res: Response) => {
+  // ── BYPASS — Gmail ingestion is active; Postmark is disabled ──────────
+  res.status(200).send("ok");
+  return;
   const log = logger.child({ route: "inbound" });
 
   // ── 1. Verify shared-secret token ─────────────────────────────────────
