@@ -5,6 +5,7 @@
 
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { useIsDevUser } from "@/lib/dev-access";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, Mail, Users, Settings, FlaskConical, LogOut } from "lucide-react";
 
@@ -22,6 +23,7 @@ const devLinks = [
 export function Nav() {
   const [location] = useLocation();
   const { user, signOut } = useAuth();
+  const isDevUser = useIsDevUser();
 
   const isActive = (href: string) =>
     location === href || location.startsWith(href + "/");
@@ -67,8 +69,8 @@ export function Nav() {
         {/* Spacer when signed out */}
         {!user && <div className="flex-1" />}
 
-        {/* Dev links */}
-        {user && (
+        {/* Dev links — only visible to dev users */}
+        {user && isDevUser && (
           <div className="hidden items-center gap-1 md:flex">
             {devLinks.map(({ href, label, icon: Icon }) => (
               <Link key={href} href={href}>

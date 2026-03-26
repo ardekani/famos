@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { useIsDevUser } from "@/lib/dev-access";
 
 import LoginPage        from "@/pages/login";
 import HomePage         from "@/pages/home";
@@ -24,25 +25,40 @@ import NotFound         from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
+// ── Loading spinner ───────────────────────────────────────────────────────
+
+function LoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3 text-muted-foreground">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <span className="text-sm">Loading…</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Protected route wrapper ───────────────────────────────────────────────
 
 function ProtectedRoute({ component: Component }: { component: ComponentType }) {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm">Loading…</span>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
+  if (!user)   return <Redirect to="/login" />;
 
-  if (!user) {
-    return <Redirect to="/login" />;
-  }
+  return <Component />;
+}
+
+// ── Dev-only route wrapper ────────────────────────────────────────────────
+// Requires auth AND dev-user access. Non-dev users are redirected to /dashboard.
+
+function DevRoute({ component: Component }: { component: ComponentType }) {
+  const { user, loading } = useAuth();
+  const isDevUser = useIsDevUser();
+
+  if (loading)            return <LoadingScreen />;
+  if (!user)              return <Redirect to="/login" />;
+  if (!isDevUser)         return <Redirect to="/dashboard" />;
 
   return <Component />;
 }
@@ -83,9 +99,9 @@ function Router() {
         <ProtectedRoute component={GmailForwardingPage} />
       </Route>
 
-      {/* Dev tools (also protected so the API token is available) */}
+      {/* Dev tools — requires auth + dev-user access */}
       <Route path="/dev/test-email">
-        <ProtectedRoute component={TestEmailPage} />
+        <DevRoute component={TestEmailPage} />
       </Route>
 
       {/* 404 */}

@@ -13,16 +13,48 @@
  *   Identified by the "seeded: true" marker in raw_payload.
  */
 
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import { getSupabaseClient } from "../lib/supabase.js";
+import { requireAuth } from "../lib/auth.js";
 import { runExtractionAndSave } from "../lib/process-email.js";
 import { SEED_FIXTURES } from "../lib/dev-seeds.js";
 
 const router = Router();
 
 const DEV_USER_ID = "00000000-0000-0000-0000-000000000001";
+
+// ── Dev email allowlist ───────────────────────────────────────────────────
+//
+// Comma-separated list of emails that may call dev endpoints even when
+// NODE_ENV is not "development". In pure development the allowlist is
+// also bypassed so local workflows aren't interrupted.
+//
+// Set DEV_EMAILS=you@example.com in your environment to grant access.
+
+const DEV_EMAIL_ALLOWLIST: Set<string> = new Set(
+  (process.env.DEV_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+function requireDevAccess(req: Request, res: Response, next: NextFunction): void {
+  // In pure dev mode all authenticated users can use dev tools.
+  if (process.env.NODE_ENV === "development") {
+    next();
+    return;
+  }
+  // Otherwise the caller must be in the allowlist.
+  const email = (req.userEmail ?? "").toLowerCase();
+  if (email && DEV_EMAIL_ALLOWLIST.has(email)) {
+    next();
+    return;
+  }
+  logger.warn({ email }, "Dev route access denied");
+  res.status(403).json({ error: "Dev access not allowed" });
+}
 
 // We tag every seeded email row so we can cleanly wipe them later.
 const SEED_MARKER = { seeded: true, source: "dev-seed-fixture" };
@@ -34,7 +66,7 @@ const SeedBodySchema = z.object({
 
 // ── POST /dev/seed ────────────────────────────────────────────────────────
 
-router.post("/dev/seed", async (req: Request, res: Response) => {
+router.post("/dev/seed", requireAuth, requireDevAccess, async (req: Request, res: Response) => {
   const parse = SeedBodySchema.safeParse(req.body ?? {});
   if (!parse.success) {
     res.status(400).json({ error: "Invalid request body", details: parse.error.issues });
@@ -166,7 +198,7 @@ router.post("/dev/seed", async (req: Request, res: Response) => {
 
 // ── DELETE /dev/seed ──────────────────────────────────────────────────────
 
-router.delete("/dev/seed", async (_req: Request, res: Response) => {
+router.delete("/dev/seed", requireAuth, requireDevAccess, async (_req: Request, res: Response) => {
   const sb = getSupabaseClient();
   const log = logger.child({ route: "DELETE /dev/seed" });
 
@@ -194,7 +226,7 @@ router.delete("/dev/seed", async (_req: Request, res: Response) => {
 // ── GET /dev/seed ─────────────────────────────────────────────────────────
 // List all seeded emails currently in the database.
 
-router.get("/dev/seed", async (_req: Request, res: Response) => {
+router.get("/dev/seed", requireAuth, requireDevAccess, async (_req: Request, res: Response) => {
   const sb = getSupabaseClient();
 
   const { data, error } = await sb
