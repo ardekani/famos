@@ -1,0 +1,136 @@
+Work through the remaining Family School OS issues in this exact order, one at a time:
+
+1. Supabase Row-Level Security (RLS)
+2. Daily digest scheduling / cron
+3. Email deletion
+4. Child matching improvements
+
+Very important workflow rules:
+- Only do ONE issue at a time.
+- After finishing each issue, STOP.
+- Do NOT move to the next issue until you ask me for approval and I explicitly tell you to continue.
+- After each issue, create a git commit with a clear commit message.
+- After each issue, tell me exactly:
+  1. what you changed
+  2. what files changed
+  3. how to test it
+  4. any env vars or dashboard config I need to set
+  5. the git commit message you used
+- Keep changes minimal and safe. Do not refactor unrelated parts of the app.
+- Preserve the existing UI style and architecture.
+- If you need to make a tradeoff, choose the simplest MVP-safe option.
+
+Issue 1: Supabase Row-Level Security (RLS)
+Goal:
+Protect all user data at the database level so users cannot read/write each other’s data through direct Supabase access.
+
+Requirements:
+- Enable RLS on all user-scoped tables:
+  - users
+  - children
+  - emails
+  - events
+  - deadlines
+  - action_items
+  - notes
+  - digests
+- Add safe policies so authenticated users can only access their own rows.
+- For user-scoped tables, use auth.uid() = user_id where appropriate.
+- For the users table, ensure a user can only read/update their own record.
+- Make sure inserts work correctly for the authenticated user.
+- If the app uses service-role code on the server, do not break it.
+- Add SQL migration(s) or schema update files as appropriate.
+- Update README with any required Supabase setup steps.
+- After implementation, STOP and ask me to test before doing anything else.
+- Create a git commit with a message like:
+  feat: enable supabase row level security
+
+Before stopping, tell me:
+- exact SQL/migration added
+- whether I need to run anything manually in Supabase
+- how to verify RLS is working
+
+Do not proceed to Issue 2 until I approve.
+
+Issue 2: Daily digest scheduling / cron
+Only do this after I explicitly approve moving on.
+
+Goal:
+Make daily digests run automatically in MVP-safe fashion.
+
+Requirements:
+- Keep the existing digest generation/send logic if already present.
+- Add a server-side cron-safe endpoint or handler that can generate/send digests for eligible users.
+- Ensure it is protected with a CRON_SECRET or equivalent.
+- Make it easy to trigger from an external scheduler later.
+- If a scheduler is not actually wired yet, at least make the endpoint production-ready and document how to wire it up.
+- If easy, add a simple “last digest sent” or “digest automation status” indication.
+- Update README with required env vars and scheduler instructions.
+- After implementation, STOP and ask for my approval before continuing.
+- Create a git commit with a message like:
+  feat: add automated digest cron endpoint
+
+Before stopping, tell me:
+- what endpoint/path to call
+- what env vars I must set
+- how to test the cron safely without waiting a day
+
+Do not proceed to Issue 3 until I approve.
+
+Issue 3: Email deletion
+Only do this after I explicitly approve moving on.
+
+Goal:
+Allow users to delete emails from the UI safely.
+
+Requirements:
+- Add a user-facing delete action on the email detail page and, if appropriate, the email list/dashboard.
+- Ensure users can only delete their own emails.
+- Deleting an email should also clean up related extracted records safely, using existing cascade behavior if available.
+- Add a confirmation step so users do not delete by accident.
+- Keep the UI simple and consistent with the app.
+- Add success/error states.
+- After implementation, STOP and ask for my approval before continuing.
+- Create a git commit with a message like:
+  feat: add user email deletion
+
+Before stopping, tell me:
+- exactly where the delete action appears
+- what happens to related parsed records
+- how I should test it
+
+Do not proceed to Issue 4 until I approve.
+
+Issue 4: Child matching improvements
+Only do this after I explicitly approve moving on.
+
+Goal:
+Improve child-name matching without making it dangerous or overly complex.
+
+Requirements:
+- Keep exact matching as the safe baseline.
+- Improve matching slightly in a conservative way, for example:
+  - case-insensitive matching
+  - trim whitespace
+  - normalize punctuation
+  - maybe simple nickname/variant support only if it is safe and easy
+- Do NOT add risky fuzzy matching that could attach emails to the wrong child.
+- If no confident match exists, keep child_id null.
+- If useful, preserve raw_child_name for debugging.
+- If easy, add small UI hints for unmatched child names.
+- Keep the logic simple, testable, and easy to understand.
+- After implementation, STOP.
+- Create a git commit with a message like:
+  feat: improve safe child matching
+
+Before stopping, tell me:
+- exactly what matching rules were added
+- which cases now work that did not before
+- which ambiguous cases still remain unmatched
+
+Execution rules recap:
+- Start with Issue 1 only.
+- Do not batch multiple issues together.
+- Stop after each issue and wait for my approval.
+- Make one git commit per completed issue.
+- Keep each change set focused and minimal.
