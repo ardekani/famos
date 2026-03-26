@@ -151,6 +151,56 @@ router.post("/emails/extract", requireAuth, async (req: Request, res: Response) 
   });
 });
 
+// ── DELETE /emails/:id ───────────────────────────────────────────────────
+//
+// Permanently removes an email and all its extracted entities (events,
+// deadlines, action_items, notes). Deletion of child rows is handled by
+// ON DELETE CASCADE in the schema — no manual cleanup required.
+//
+// Always scoped to req.userId so a user can never delete another user's email.
+
+router.delete("/emails/:id", requireAuth, async (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!id || !UUID_RE.test(id)) {
+    res.status(400).json({ error: "Invalid email ID format" });
+    return;
+  }
+
+  const userId = req.userId;
+  const sb = getSupabaseClient();
+
+  // Verify ownership before deleting
+  const { data: email, error: fetchError } = await sb
+    .from("emails")
+    .select("id")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .single();
+
+  if (fetchError || !email) {
+    res.status(404).json({ error: "Email not found" });
+    return;
+  }
+
+  // Delete — cascade removes all extracted entities automatically
+  const { error: deleteError } = await sb
+    .from("emails")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (deleteError) {
+    logger.error({ deleteError, emailId: id }, "Failed to delete email");
+    res.status(500).json({ error: "Failed to delete email", details: deleteError.message });
+    return;
+  }
+
+  logger.info({ emailId: id, userId }, "Email deleted");
+  res.status(204).send();
+});
+
 // ── GET /emails/:id ───────────────────────────────────────────────────────
 
 router.get("/emails/:id", requireAuth, async (req: Request, res: Response) => {

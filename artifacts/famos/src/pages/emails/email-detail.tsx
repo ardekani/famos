@@ -13,7 +13,7 @@
 
 import React, { useState } from "react";
 import { Shell } from "@/components/layout/Shell";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import {
   Loader2,
   Mail,
   Check,
+  Trash2,
 } from "lucide-react";
 import { getEmailWithExtractions, completeActionItem } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
@@ -420,12 +421,34 @@ function useReExtract(emailId: string) {
   });
 }
 
+// ── Delete email ──────────────────────────────────────────────────────────
+
+function useDeleteEmail(emailId: string) {
+  const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+  return useMutation<void, Error>({
+    mutationFn: async () => {
+      const res = await apiFetch(`/api/emails/${emailId}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? `Server error ${res.status}`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["emails"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      navigate("/emails");
+    },
+  });
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export default function EmailDetailPage() {
   const params  = useParams<{ id: string }>();
   const emailId = params.id ?? "";
   const { user } = useAuth();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey:    ["email", emailId],
@@ -434,7 +457,8 @@ export default function EmailDetailPage() {
     staleTime:   30_000,
   });
 
-  const reExtract = useReExtract(emailId);
+  const reExtract   = useReExtract(emailId);
+  const deleteEmail = useDeleteEmail(emailId);
 
   // ── Not found ──
   if (!isLoading && !data && !error) {
@@ -529,9 +553,10 @@ export default function EmailDetailPage() {
               </div>
             )}
 
-            {/* ── Re-run extraction button ── */}
+            {/* ── Actions row: delete + re-run ── */}
             <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
-              <div>
+              {/* Left: status messages + delete controls */}
+              <div className="flex items-center gap-2 flex-wrap">
                 {reExtract.isSuccess && (
                   <p className={`text-sm font-medium ${
                     reExtract.data?.processing_status === "processed"
@@ -539,14 +564,59 @@ export default function EmailDetailPage() {
                       : "text-red-700"
                   }`}>
                     {reExtract.data?.processing_status === "processed"
-                      ? "Re-extraction succeeded — page refreshed."
+                      ? "Re-extraction succeeded."
                       : `Re-extraction failed: ${reExtract.data?.error}`}
                   </p>
                 )}
+                {reExtract.isError && (
+                  <p className="text-sm font-medium text-red-700">
+                    {reExtract.error.message}
+                  </p>
+                )}
+                {deleteEmail.isError && (
+                  <p className="text-sm font-medium text-red-700">
+                    {deleteEmail.error.message}
+                  </p>
+                )}
+
+                {!confirmingDelete ? (
+                  <button
+                    onClick={() => setConfirmingDelete(true)}
+                    disabled={deleteEmail.isPending}
+                    className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete email
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Delete this email and all extracted data?</span>
+                    <button
+                      onClick={() => deleteEmail.mutate()}
+                      disabled={deleteEmail.isPending}
+                      className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deleteEmail.isPending ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Deleting…</>
+                      ) : (
+                        "Yes, delete"
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={deleteEmail.isPending}
+                      className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {/* Right: re-run extraction */}
               <button
                 onClick={() => reExtract.mutate()}
-                disabled={reExtract.isPending}
+                disabled={reExtract.isPending || deleteEmail.isPending}
                 className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {reExtract.isPending ? (
