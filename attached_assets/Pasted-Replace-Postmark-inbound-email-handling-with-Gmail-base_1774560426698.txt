@@ -1,0 +1,183 @@
+Replace Postmark inbound email handling with Gmail-based ingestion using Google Workspace, while keeping Resend unchanged for outbound digest emails.
+
+Core MVP goal:
+- Users forward school emails to inbox@famops.app
+- Our app reads those emails from the Gmail mailbox for inbox@famops.app
+- The app ingests them into the existing email pipeline
+- Existing extraction/parsing continues to run
+- Existing outbound digest emails continue to use Resend exactly as they do now
+- Do not make unrelated product changes
+
+Important constraints:
+- Optimize for MVP speed and reliability
+- Prefer scheduled polling over Gmail watch/webhook unless the repo already has infrastructure that makes watch trivial
+- Make the smallest safe changes possible
+- Reuse the existing parsing pipeline and data model wherever possible
+- Keep Postmark code disabled or bypassed, not necessarily deleted
+- Do not break current auth, dashboard, digest, or parsing flows
+- Do not continue automatically from one phase to the next
+- Before each phase, explain what you found and what you plan to change, then STOP and wait for my approval
+- After each approved phase, create a git commit with a clear commit message
+
+Execution phases:
+
+==================================================
+PHASE 1 — DISCOVERY AND PLAN
+==================================================
+
+In this phase, do NOT implement anything yet.
+
+Tasks:
+1. Audit the repo and identify all current inbound email assumptions and dependencies, including:
+   - Postmark-related code paths
+   - inbound webhook routes
+   - env vars
+   - README/docs references
+   - setup/onboarding copy that assumes Postmark
+   - database/schema assumptions related to inbound provider
+2. Confirm that outbound email via Resend is separate and should remain unchanged
+3. Inspect the existing ingestion flow and determine the cleanest insertion point for Gmail-based inbound
+4. Recommend the smallest-change MVP architecture for Gmail-based ingestion from a single mailbox: inbox@famops.app
+
+For this phase, return exactly:
+a) a short summary of the current inbound architecture
+b) exact files you would modify
+c) any database/schema changes needed, if any
+d) new env vars needed
+e) recommended ingestion approach for MVP:
+   - scheduled polling
+   - or Gmail watch/webhook
+   and why
+f) how you would map Gmail messages safely into the existing email ingestion pipeline
+g) rollback plan if we need to back out
+h) risks / edge cases
+
+Then STOP and wait for my approval.
+
+Do not code phase 2 until I approve.
+
+==================================================
+PHASE 2 — MINIMAL IMPLEMENTATION
+==================================================
+
+Only do this after I explicitly approve.
+
+Goal:
+Implement Gmail-based inbound ingestion for MVP using the simplest reliable approach.
+
+Requirements:
+1. Use Google Workspace Gmail mailbox inbox@famops.app as the single inbound mailbox
+2. Prefer scheduled polling over watch/webhook unless phase 1 found a very strong reason otherwise
+3. Fetch inbound emails from Gmail API and capture at least:
+   - subject
+   - from
+   - to
+   - date
+   - plain text body when available
+   - html body if available
+   - thread id
+   - Gmail message id
+   - RFC822/Message-ID header if available
+   - attachment metadata only (not full attachment parsing yet unless trivial)
+4. Normalize Gmail-fetched emails into the existing app ingestion shape as much as possible
+5. Preserve and reuse the current downstream parsing / extraction pipeline
+6. Add idempotency / duplicate protection so the same Gmail message is not processed twice
+7. Add clear logging and error handling
+8. Keep schema changes minimal
+9. Keep Postmark code disabled/bypassed but not fully ripped out unless absolutely necessary
+10. Do not change Resend outbound email behavior
+
+Implementation preference:
+- Build this as a focused adapter layer from Gmail -> existing ingest pipeline
+- Do not duplicate the parsing pipeline if it can be reused cleanly
+- If useful, create a small Gmail ingestion service/module and a polling job entrypoint
+
+At the end of phase 2:
+- summarize exactly what changed
+- list exact files changed
+- explain how to test manually
+- explain any env vars or Google setup I need to do
+- create a git commit with a clear message
+- STOP and wait for my approval
+
+==================================================
+PHASE 3 — ADMIN / TESTING SUPPORT
+==================================================
+
+Only do this after I explicitly approve.
+
+Goal:
+Make Gmail-based inbound practical to operate and test during MVP.
+
+Requirements:
+1. Add a simple internal/admin way to:
+   - trigger Gmail sync manually
+   - inspect recently ingested Gmail messages
+2. Keep this admin/dev support hidden from normal users
+3. Add/update developer docs covering:
+   - Google Workspace mailbox assumption for inbox@famops.app
+   - Gmail API setup
+   - whether this uses OAuth client credentials or service account/domain-wide delegation
+   - required env vars
+   - local development behavior
+   - production behavior
+4. Add a realistic test plan using 3–5 forwarded school emails
+5. Keep this phase lightweight and MVP-oriented
+
+At the end of phase 3:
+- summarize exactly what changed
+- list exact files changed
+- explain how to test
+- create a git commit with a clear message
+- STOP and wait for my approval
+
+==================================================
+ARCHITECTURE PREFERENCES
+==================================================
+
+Please follow these preferences unless phase 1 finds a strong reason not to:
+
+1. Ingestion mode:
+- Prefer scheduled polling of the Gmail inbox over Gmail watch/webhook for MVP simplicity
+
+2. Authentication approach:
+- Recommend the simplest safe server-side Gmail access approach for a single shared mailbox
+- If service account with domain-wide delegation is the best option, explain that clearly
+- If OAuth for the mailbox is simpler for MVP, explain that clearly
+- Do not overengineer multi-mailbox support
+
+3. Data handling:
+- Reuse the existing emails table and ingestion pipeline if possible
+- Only add minimal fields if Gmail metadata truly requires it
+- Preserve user-scoped downstream records
+
+4. Idempotency:
+- Use Gmail message id as the main dedup key if appropriate
+- Also preserve RFC822 Message-ID if available
+- Never process the same inbound email twice
+
+5. Scope:
+- Single inbound mailbox only: inbox@famops.app
+- No attachment parsing yet
+- No Gmail send capability needed
+- No product redesign
+- No unrelated refactors
+
+==================================================
+OUTPUT FORMAT REQUIRED AT THE END OF EACH PHASE
+==================================================
+
+For each phase, your response must include:
+
+1. What you found
+2. What you recommend
+3. Exact files to change
+4. Risks / edge cases
+5. What I need to configure manually, if anything
+6. Git commit message used (for phases that include implementation)
+
+And then STOP for approval.
+
+Do not continue automatically past a phase.
+Do not batch multiple phases together.
+Create one git commit after each approved implementation phase.
