@@ -11,7 +11,7 @@
  */
 
 import { Link } from "wouter";
-import { Users, Mail, ArrowRight, FlaskConical, Settings } from "lucide-react";
+import { Users, Mail, ArrowRight, Sparkles, Settings } from "lucide-react";
 
 type Step = 1 | 2;
 
@@ -107,18 +107,18 @@ function Step2Card() {
 
       <div className="mt-5 flex flex-wrap gap-3">
         <Link
-          href="/dev/test-email"
+          href="/try"
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
         >
-          <FlaskConical className="h-4 w-4" />
-          Try it with a school email
+          <Sparkles className="h-4 w-4" />
+          Paste a school email
         </Link>
         <Link
           href="/setup/gmail-forwarding"
           className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
         >
           <Settings className="h-4 w-4" />
-          Set up Gmail forwarding
+          Set up auto-forwarding
         </Link>
       </div>
     </div>

@@ -20,6 +20,7 @@ import ChildrenPage     from "@/pages/children";
 import EmailsPage       from "@/pages/emails/index";
 import EmailDetailPage  from "@/pages/emails/email-detail";
 import GmailForwardingPage from "@/pages/setup/gmail-forwarding";
+import TryPage            from "@/pages/try";
 import TestEmailPage    from "@/pages/dev/test-email";
 import NotFound         from "@/pages/not-found";
 
@@ -97,6 +98,9 @@ function Router() {
       </Route>
       <Route path="/setup/gmail-forwarding">
         <ProtectedRoute component={GmailForwardingPage} />
+      </Route>
+      <Route path="/try">
+        <ProtectedRoute component={TryPage} />
       </Route>
 
       {/* Dev tools — requires auth + dev-user access */}
