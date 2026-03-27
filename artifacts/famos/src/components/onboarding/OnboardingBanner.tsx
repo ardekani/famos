@@ -10,8 +10,11 @@
  * so no extra queries happen here.
  */
 
+import { useState } from "react";
 import { Link } from "wouter";
-import { Users, Mail, ArrowRight, Sparkles, Settings } from "lucide-react";
+import { Users, Mail, ArrowRight, Sparkles, Settings, Copy, Check, Forward } from "lucide-react";
+
+const INBOUND_ADDRESS = "inbox@famops.app";
 
 type Step = 1 | 2;
 
@@ -83,6 +86,15 @@ function Step1Card() {
 // ── Step 2 — First email ───────────────────────────────────────────────────
 
 function Step2Card() {
+  const [showForward, setShowForward] = useState(false);
+  const [copied,      setCopied]      = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(INBOUND_ADDRESS);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -101,11 +113,12 @@ function Step2Card() {
         Bring in your first school email
       </h2>
       <p className="mt-1.5 text-sm text-muted-foreground max-w-lg">
-        Paste a real school email to see FamOS extract events and action items
-        instantly — or set up automatic forwarding so emails flow in on their own.
+        Try it instantly by pasting an email, forward one to see it appear automatically,
+        or set up full auto-forwarding so every school email flows in on its own.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-3">
+        {/* Option 1 — Paste */}
         <Link
           href="/try"
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
@@ -113,6 +126,17 @@ function Step2Card() {
           <Sparkles className="h-4 w-4" />
           Paste a school email
         </Link>
+
+        {/* Option 2 — Forward one email */}
+        <button
+          onClick={() => setShowForward((v) => !v)}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+        >
+          <Forward className="h-4 w-4" />
+          Forward one email
+        </button>
+
+        {/* Option 3 — Full auto-forwarding setup */}
         <Link
           href="/setup/gmail-forwarding"
           className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
@@ -121,6 +145,34 @@ function Step2Card() {
           Set up auto-forwarding
         </Link>
       </div>
+
+      {/* Inline forward panel */}
+      {showForward && (
+        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-sm font-semibold text-foreground mb-1">
+            Forward any school email to this address
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Open a school email in Gmail, click Forward, and send it here.
+            It'll appear on your dashboard within a few minutes.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-mono text-sm font-semibold text-foreground bg-background border border-border rounded-lg px-3 py-2">
+              {INBOUND_ADDRESS}
+            </span>
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {copied ? (
+                <><Check className="h-3.5 w-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+              ) : (
+                <><Copy className="h-3.5 w-3.5" />Copy address</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
