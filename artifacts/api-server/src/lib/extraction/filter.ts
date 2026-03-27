@@ -3,23 +3,80 @@
  *
  * Runs synchronously after OpenAI returns and before child-name resolution.
  * Removes logistical noise from action_items (arrival times, attire, etc.)
- * and preserves important context as notes instead of silently dropping it.
+ * and preserves context as notes so the email detail page still shows it.
  *
- * Classification:
- *   "keep"   — concrete parent task (sign, submit, bring, pay, RSVP …)
- *   "noise"  — event logistics; moved to notes, removed from action_items
- *   "review" — ambiguous; kept but downgraded to priority "low"
+ * Three-tier classification:
+ *
+ *   ALWAYS_NOISE  — arrival times, drop-off/pick-up, generic filler.
+ *                   These are unconditionally suppressed. No high-value
+ *                   pattern can rescue them.
+ *
+ *   SOFT_NOISE    — attire / dress-code logistics. Suppressed unless a
+ *                   HIGH_VALUE pattern also matches (e.g. "bring PE uniform"
+ *                   is rescued because it's a supply action).
+ *
+ *   HIGH_VALUE    — concrete parent tasks. Keeps the item unless ALWAYS_NOISE
+ *                   also matches. "bring" and "send" only count when paired
+ *                   with a specific object — not "bring your child to X".
+ *
+ * Verdict mapping → DB outcome:
+ *   "keep"    — passes through unchanged
+ *   "review"  — kept but downgraded to priority "low" (shown collapsed)
+ *   "noise"   — removed from action_items, added as note (context preserved)
  */
 
 import type { RawExtractionResult, RawActionItem, RawNote } from "./types.js";
 
-// ── Heuristic pattern sets ────────────────────────────────────────────────
+// ── Tier 1: ALWAYS_NOISE ─────────────────────────────────────────────────
+// Arrival times and logistical filler. Unconditionally suppressed.
+// No HIGH_VALUE pattern can override these.
 
-/**
- * If any of these match, the item is almost certainly a real parent action.
- * These win over any noise pattern.
- */
+const ALWAYS_NOISE_RE: RegExp[] = [
+  // Arrival logistics
+  /\barriv(e|al|ing)\b/i,
+  /\bbe\s+at\b/i,
+  /\bshould\s+be\s+at\b/i,
+  /\bshould\s+arrive\b/i,
+  /\bensure\s+\S+\s+arrives?\b/i,
+  /\bmake\s+sure\s+\S+\s+(is\s+)?(at|there|present)\b/i,
+  /\bneed(s)?\s+to\s+be\s+at\b/i,
+  // Drop-off / pick-up scheduling
+  /\bdrop.?off\b/i,
+  /\bpick.?up\b/i,
+  // Generic informational filler
+  /\blet\s+us\s+know\s+if\b/i,
+  /\bif\s+you\s+have\s+(any\s+)?questions?\b/i,
+  /\bfor\s+more\s+(information|info|details)\b/i,
+  /\bfeel\s+free\s+to\s+(contact|email|reach|call)\b/i,
+  /\bplease\s+(contact|email|reach|call)\s+us\b/i,
+  /\bdon't\s+hesitate\s+to\b/i,
+];
+
+// ── Tier 2: SOFT_NOISE ────────────────────────────────────────────────────
+// Attire and dress-code logistics. Suppressed UNLESS a HIGH_VALUE pattern
+// also fires (e.g. "bring PE uniform" = supply action → keep).
+
+const SOFT_NOISE_RE: RegExp[] = [
+  /\bwear\b/i,
+  /\battire\b/i,
+  /\bdress\s*code\b/i,
+  /\bperformance\s+(attire|outfit|wear|uniform|clothes|clothing)\b/i,
+  /\bdressed\b/i,
+  /\boutfit\b/i,
+  /\bclothes\b/i,
+  /\bclothing\b/i,
+  // standalone uniform without an action verb = logistics, not task
+  /^[^a-z]*(uniform|costume|costume|t-shirt|tshirt|shirt)[^a-z]*$/i,
+];
+
+// ── Tier 3: HIGH_VALUE ────────────────────────────────────────────────────
+// Concrete parent actions. Override SOFT_NOISE. Do NOT override ALWAYS_NOISE.
+//
+// "bring" and "send" are only HIGH_VALUE when paired with a specific object
+// or deliverable — not generic "bring your child to the event".
+
 const HIGH_VALUE_RE: RegExp[] = [
+  // Form/document actions
   /\bsign\b/i,
   /\breturn\b/i,
   /\bsubmit\b/i,
@@ -27,72 +84,76 @@ const HIGH_VALUE_RE: RegExp[] = [
   /\bfill\s*(out|in)\b/i,
   /\bpermission\b/i,
   /\bform\b/i,
+  /\bslip\b/i,
+  // Commitment actions
   /\brsvp\b/i,
+  /\bregister\b/i,
+  /\benrol(l)?\b/i,
+  /\bsign\s*up\b/i,
+  // Payment
   /\bpay\b/i,
   /\bpayment\b/i,
   /\bfee\b/i,
-  /\bregister\b/i,
-  /\benrol(l)?\b/i,
-  /\bring\b/i,
-  /\bsend\b/i,
-  /\bpack(ed)?\b/i,
   /\bpurchase\b/i,
   /\bbuy\b/i,
   /\bdonate\b/i,
+  /\$\d/,          // "$5", "$10" — implies send money
+  /\bmoney\b/i,
+  /\bcash\b/i,
+  // Supply-specific actions (pack/provide/donate)
+  /\bpack(ed)?\b/i,
   /\bprovide\b/i,
-  /\bslip\b/i,       // permission slip
-  /\bsnack\b/i,
-  /\blunch\b/i,
+  // Named supplies the model likely flagged for a reason
+  /\bsnacks?\b/i,
+  /\blunch(es)?\b/i,
   /\bwater\s*bottle\b/i,
   /\bsuppl(y|ies)\b/i,
   /\bdeadline\b/i,
+  // "bring [specific supply]" — NOT bare "bring" (too broad, catches "bring child to X")
+  // Allows 0-2 intermediate words so "Bring PE uniform" and "Bring a spare change" match
+  /\bbring\s+(?:\w+\s+){0,2}(lunch|snacks?|food|drink|water|bottle|towel|swimsuit|swim\s*suit|gear|supply|supplies|material|materials|permission|form|slip|payment|money|cash|folder|backpack|bag|change|item|book|notebook|pencil|pen|instrument|costume|uniform|equipment|kit|shoes|boots|hat|gloves)\b/i,
+  // "send [specific deliverable]" — NOT bare "send"
+  /\bsend\s+(?:\w+\s+){0,2}(form|slip|permission|payment|check|note|rsvp|response|photo|picture|proof|receipt|confirmation)\b/i,
+  // Payment by check — distinguish from "check your backpack"
+  /\bwrite\s+(a\s+)?check\b/i,
+  /\$\d+\s*(check|payment)\b/i,
 ];
 
-/**
- * If any of these match (and no HIGH_VALUE pattern matches),
- * the item is logistical noise and gets moved to notes.
- */
-const NOISE_RE: RegExp[] = [
-  /\barriv(e|al|ing)\b/i,
-  /\bbe\s+at\b/i,
-  /\bshould\s+be\s+at\b/i,
-  /\bshould\s+arrive\b/i,
-  /\bensure\s+\S+\s+arrives?\b/i,
-  /\bmake\s+sure\s+\S+\s+(is\s+)?(at|there|present)\b/i,
-  /\bwear\b/i,
-  /\battire\b/i,
-  /\bdress\s*code\b/i,
-  /\bperformance\s+(attire|outfit|wear|uniform)\b/i,
-  /\blet\s+us\s+know\s+if\b/i,
-  /\bif\s+you\s+have\s+(any\s+)?questions?\b/i,
-  /\bfor\s+more\s+information\b/i,
-  /\bfeel\s+free\s+to\s+(contact|email|reach)\b/i,
-  /\bplease\s+(contact|email|reach)\s+us\b/i,
-  /\bdrop.?off\b/i,
-  /\bpick.?up\b/i,
-];
+// ── Classification ────────────────────────────────────────────────────────
 
-// ── Classification logic ──────────────────────────────────────────────────
+function isAlwaysNoise(task: string): boolean {
+  return ALWAYS_NOISE_RE.some((re) => re.test(task));
+}
+
+function isSoftNoise(task: string): boolean {
+  return SOFT_NOISE_RE.some((re) => re.test(task));
+}
 
 function isHighValue(task: string): boolean {
   return HIGH_VALUE_RE.some((re) => re.test(task));
 }
 
-function isNoise(task: string): boolean {
-  return NOISE_RE.some((re) => re.test(task));
-}
-
 /**
  * Classify a single action item.
- *   "keep"   — explicit high-value action
- *   "noise"  — logistics that belong in event description or notes
- *   "review" — neither clearly high-value nor clearly noise; downgrade to low
+ *
+ *   "keep"   — concrete parent task; show in Action Needed
+ *   "review" — ambiguous; kept but downgraded to low (shown in Optional)
+ *   "noise"  — logistics or filler; removed, preserved as note
  */
-function classify(item: RawActionItem): "keep" | "noise" | "review" {
-  if (isHighValue(item.task)) return "keep";
-  if (isNoise(item.task)) return "noise";
+function classify(item: RawActionItem): "keep" | "review" | "noise" {
+  // Tier 1 check first — nothing rescues arrival times / filler
+  if (isAlwaysNoise(item.task)) return "noise";
 
-  // Low-confidence low-priority items with no due date are suspect
+  const highValue = isHighValue(item.task);
+  const softNoisy = isSoftNoise(item.task);
+
+  // High-value wins over soft noise (e.g. "bring PE uniform" stays)
+  if (highValue) return "keep";
+
+  // Soft noise with no saving high-value signal → suppress
+  if (softNoisy) return "noise";
+
+  // Low-confidence, low-priority, no due date → suppress as noise
   if (
     item.priority === "low" &&
     !item.due_date &&
@@ -101,7 +162,7 @@ function classify(item: RawActionItem): "keep" | "noise" | "review" {
     return "noise";
   }
 
-  // Unknown items without due dates become low-priority suggestions
+  // Anything else: ambiguous → keep but mark optional
   return "review";
 }
 
@@ -112,11 +173,7 @@ function classify(item: RawActionItem): "keep" | "noise" | "review" {
  *
  * - "keep"   items pass through unchanged
  * - "review" items are kept but downgraded to priority "low"
- * - "noise"  items are removed and their task text preserved as a note
- *            (so context is not lost on the email detail page)
- *
- * Notes generated from suppressed items get a "📌 " prefix so the UI can
- * distinguish them from model-authored notes if needed.
+ * - "noise"  items are moved to notes (context preserved for detail page)
  *
  * Returns a new RawExtractionResult — does not mutate the input.
  */
@@ -132,7 +189,7 @@ export function filterActionItems(result: RawExtractionResult): RawExtractionRes
     } else if (verdict === "review") {
       keptActions.push({ ...item, priority: "low" });
     } else {
-      // noise — preserve as note so detail page still shows it
+      // noise — preserve as note so the email detail page still shows it
       newNotes.push({
         content: item.task,
         child_name: item.child_name,
