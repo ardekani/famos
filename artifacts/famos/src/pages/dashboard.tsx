@@ -33,6 +33,7 @@ import {
   Send,
   Users,
   GraduationCap,
+  ShoppingBag,
 } from "lucide-react";
 import {
   getDashboardData,
@@ -264,6 +265,98 @@ function WeekGlanceCard({
   );
 }
 
+// ── Action item categorization ─────────────────────────────────────────────
+// Pure frontend classification — runs on already-filtered items.
+// Determines which semantic bucket each action belongs in.
+
+type ActionCategory = "must_do" | "bring_prepare" | "optional";
+
+/** Patterns that indicate a commitment/form/payment action */
+const MUST_DO_PATTERNS: RegExp[] = [
+  /\bsign\b/i,
+  /\breturn\b/i,
+  /\bsubmit\b/i,
+  /\bcomplete\b/i,
+  /\bfill\s*(out|in)\b/i,
+  /\bpermission\b/i,
+  /\bform\b/i,
+  /\bslip\b/i,
+  /\brsvp\b/i,
+  /\bregister\b/i,
+  /\benrol(l)?\b/i,
+  /\bsign\s*up\b/i,
+  /\bpay\b/i,
+  /\bpayment\b/i,
+  /\bfee\b/i,
+  /\bdeadline\b/i,
+  /\$\d/,
+  /\bmoney\b/i,
+  /\bcash\b/i,
+];
+
+/** Patterns that indicate a supply / physical-preparation action */
+const BRING_PREPARE_PATTERNS: RegExp[] = [
+  /\bbring\b/i,
+  /\bpack(ed)?\b/i,
+  /\bsend\b/i,
+  /\bprepare\b/i,
+  /\bprovide\b/i,
+  /\blunch(es)?\b/i,
+  /\bsnacks?\b/i,
+  /\bwater\s*bottle\b/i,
+  /\bswimsuit\b/i,
+  /\btowel\b/i,
+  /\bshoes?\b/i,
+  /\buniform\b/i,
+  /\bjacket\b/i,
+  /\bcoat\b/i,
+  /\bsuppl(y|ies)\b/i,
+  /\bgear\b/i,
+  /\bequipment\b/i,
+  /\bcostume\b/i,
+  /\binstrument\b/i,
+  /\bbackpack\b/i,
+  /\bkit\b/i,
+  /\bbag\b/i,
+  /\bfood\b/i,
+  /\bdrink\b/i,
+];
+
+/**
+ * Classify an action item into a semantic bucket.
+ * must_do wins over bring_prepare when both match
+ * (e.g. "bring and sign permission slip" → must_do).
+ * Items with priority "low" (already downgraded by filter.ts) → optional.
+ */
+function categorizeAction(item: ActionItemWithChild): ActionCategory {
+  if (item.priority === "low") return "optional";
+  const task = item.task;
+  if (MUST_DO_PATTERNS.some((re) => re.test(task))) return "must_do";
+  if (BRING_PREPARE_PATTERNS.some((re) => re.test(task))) return "bring_prepare";
+  // Unmatched high-priority items belong in must_do; others in bring_prepare
+  return item.priority === "high" ? "must_do" : "bring_prepare";
+}
+
+/** Sort items: overdue → due soon (≤3d) → coming up → no date, then by priority */
+function sortByUrgency(
+  items: ActionItemWithChild[],
+  today: string,
+  dueSoon: string
+): ActionItemWithChild[] {
+  const urgency = (i: ActionItemWithChild) => {
+    if (i.due_date && i.due_date < today) return 0;
+    if (i.due_date && i.due_date <= dueSoon) return 1;
+    if (i.due_date) return 2;
+    return 3;
+  };
+  const priorityRank = { high: 0, medium: 1, low: 2 } as const;
+  return [...items].sort(
+    (a, b) =>
+      urgency(a) - urgency(b) ||
+      priorityRank[a.priority] - priorityRank[b.priority]
+  );
+}
+
 // ── Section: Action Needed ─────────────────────────────────────────────────
 
 function ActionRow({
@@ -278,13 +371,16 @@ function ActionRow({
   const isHigh = item.priority === "high";
   const isOverdue = item.due_date ? item.due_date < today : false;
   const isDueToday = item.due_date === today;
+  const isDueSoon = !isOverdue && !isDueToday && item.due_date
+    ? item.due_date <= shiftDate(3)
+    : false;
 
   return (
     <div
       className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
         isOverdue
           ? "border-red-200 bg-red-50/40"
-          : isHigh
+          : isHigh && isDueSoon
           ? "border-orange-200 bg-orange-50/30"
           : "border-border bg-card"
       }`}
@@ -298,8 +394,23 @@ function ActionRow({
       </button>
 
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2 mb-0.5">
+        <div className="flex flex-wrap items-center gap-2 mb-1">
           <ChildTag name={item.child?.name ?? item.raw_child_name} />
+          {isOverdue && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+              Overdue
+            </span>
+          )}
+          {isDueToday && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              Due today
+            </span>
+          )}
+          {isDueSoon && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+              Due {formatDate(item.due_date)}
+            </span>
+          )}
         </div>
         <p
           className={`text-sm text-foreground leading-snug ${
@@ -308,17 +419,9 @@ function ActionRow({
         >
           {item.task}
         </p>
-        {item.due_date && (
-          <p
-            className={`mt-1 text-xs font-medium ${
-              isOverdue
-                ? "text-red-600"
-                : isDueToday
-                ? "text-amber-600"
-                : "text-muted-foreground"
-            }`}
-          >
-            {isOverdue ? "Overdue · " : ""}Due {formatDate(item.due_date)}
+        {item.due_date && !isOverdue && !isDueToday && !isDueSoon && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Due {formatDate(item.due_date)}
           </p>
         )}
       </div>
@@ -333,15 +436,15 @@ function ActionRow({
   );
 }
 
-function ActionGroup({
+function ActionBucket({
+  icon,
   label,
-  labelClass,
   items,
   today,
   onComplete,
 }: {
+  icon: React.ReactNode;
   label: string;
-  labelClass: string;
   items: ActionItemWithChild[];
   today: string;
   onComplete: (id: string) => void;
@@ -349,9 +452,12 @@ function ActionGroup({
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">
-      <p className={`text-[11px] font-semibold uppercase tracking-wide ${labelClass}`}>
-        {label}
-      </p>
+      <div className="flex items-center gap-1.5">
+        <span className="text-muted-foreground/50">{icon}</span>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+      </div>
       {items.map((item) => (
         <ActionRow key={item.id} item={item} today={today} onComplete={onComplete} />
       ))}
@@ -378,27 +484,16 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   };
 
   const today = todayISO();
-  const dueSoon = shiftDate(3); // within 3 days = "soon"
+  const dueSoon = shiftDate(3);
 
   const visible = items.filter((i) => !optimisticDone.has(i.id));
 
-  // Split main (high/medium) from optional (low)
-  const main = visible.filter((i) => i.priority !== "low");
-  const optional = visible.filter((i) => i.priority === "low");
+  // Categorize into semantic buckets
+  const mustDo      = sortByUrgency(visible.filter((i) => categorizeAction(i) === "must_do"),       today, dueSoon);
+  const bringPrepare = sortByUrgency(visible.filter((i) => categorizeAction(i) === "bring_prepare"), today, dueSoon);
+  const optional    = sortByUrgency(visible.filter((i) => categorizeAction(i) === "optional"),      today, dueSoon);
 
-  // Sort helper: high before medium within a group
-  const byPriority = (a: ActionItemWithChild, b: ActionItemWithChild) => {
-    const rank = { high: 0, medium: 1, low: 2 } as const;
-    return rank[a.priority] - rank[b.priority];
-  };
-
-  // Group main items by urgency
-  const overdue  = main.filter((i) => i.due_date && i.due_date < today).sort(byPriority);
-  const duesoon  = main.filter((i) => i.due_date && i.due_date >= today && i.due_date <= dueSoon).sort(byPriority);
-  const coming   = main.filter((i) => i.due_date && i.due_date > dueSoon).sort(byPriority);
-  const nodate   = main.filter((i) => !i.due_date).sort(byPriority);
-
-  const totalMain = main.length;
+  const totalMain = mustDo.length + bringPrepare.length;
 
   return (
     <section className="mb-8">
@@ -407,60 +502,45 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
         label="Action Needed"
         count={totalMain}
       />
+
       {totalMain === 0 && optional.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50/60 p-4">
           <PartyPopper className="h-5 w-5 shrink-0 text-green-500" />
           <div>
             <p className="text-sm font-semibold text-green-800">All caught up!</p>
-            <p className="text-xs text-green-600 mt-0.5">
-              No actions pending. Well done.
-            </p>
+            <p className="text-xs text-green-600 mt-0.5">No actions pending. Well done.</p>
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <ActionGroup
-            label="Overdue"
-            labelClass="text-red-500"
-            items={overdue}
+        <div className="space-y-5">
+          <ActionBucket
+            icon={<CheckCircle2 className="h-3 w-3" />}
+            label="Must do"
+            items={mustDo}
             today={today}
             onComplete={handleComplete}
           />
-          <ActionGroup
-            label="Due soon"
-            labelClass="text-amber-600"
-            items={duesoon}
-            today={today}
-            onComplete={handleComplete}
-          />
-          <ActionGroup
-            label="Coming up"
-            labelClass="text-muted-foreground"
-            items={coming}
-            today={today}
-            onComplete={handleComplete}
-          />
-          <ActionGroup
-            label="To do"
-            labelClass="text-muted-foreground"
-            items={nodate}
+          <ActionBucket
+            icon={<ShoppingBag className="h-3 w-3" />}
+            label="Bring / prepare"
+            items={bringPrepare}
             today={today}
             onComplete={handleComplete}
           />
 
-          {/* Optional / lower priority — collapsed by default */}
+          {/* Optional / FYI — collapsed by default */}
           {optional.length > 0 && (
             <div>
               <button
                 onClick={() => setShowOptional((v) => !v)}
-                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/50 hover:text-muted-foreground transition-colors"
               >
                 {showOptional ? (
                   <ChevronUp className="h-3 w-3" />
                 ) : (
                   <ChevronDown className="h-3 w-3" />
                 )}
-                Optional · {optional.length}
+                Optional / FYI · {optional.length}
               </button>
               {showOptional && (
                 <div className="mt-2 space-y-2">
