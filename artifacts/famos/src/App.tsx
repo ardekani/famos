@@ -70,8 +70,8 @@ function Router() {
   const { user, loading } = useAuth();
   const [location] = useLocation();
 
-  // Redirect authenticated users away from /login
-  if (!loading && user && location === "/login") {
+  // Redirect authenticated users away from public-only pages
+  if (!loading && user && (location === "/login" || location === "/")) {
     return <Redirect to="/dashboard" />;
   }
 
