@@ -75,12 +75,16 @@ export function buildUserMessage(
   body: string,
   childNames: string[] = []
 ): string {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD in UTC
+
   const childHint =
     childNames.length > 0
       ? `\n\nRegistered children for this family:\n${childNames.map((n) => `- ${n}`).join("\n")}\n\nWhen a child is mentioned in the email, use their registered name exactly as listed above. If you cannot match the reference to any registered child, use "unknown".`
       : "";
 
-  return `Email Subject: ${subject}
+  return `Today's date: ${today}
+
+Email Subject: ${subject}
 Email Body:
 ${body}${childHint}`;
 }
