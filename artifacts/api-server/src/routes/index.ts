@@ -14,9 +14,8 @@ router.use(digestRouter);
 router.use(cronRouter);
 router.use(inboundRouter);
 
-// Dev routes — only mount in non-production environments
-if (process.env.NODE_ENV !== "production") {
-  router.use(devRouter);
-}
+// Dev routes — always mounted, access controlled by requireAuth + requireDevAccess
+// (requireDevAccess checks DEV_EMAILS allowlist in production)
+router.use(devRouter);
 
 export default router;
