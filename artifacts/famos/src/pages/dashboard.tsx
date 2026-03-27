@@ -189,89 +189,11 @@ function EmptyState({
   );
 }
 
-// ── Section: Week at a Glance ──────────────────────────────────────────────
-
-function WeekGlanceCard({
-  events,
-  deadlines,
-  actionItems,
-  weekLabel,
-}: {
-  events: EventWithChild[];
-  deadlines: Deadline[];
-  actionItems: ActionItemWithChild[];
-  weekLabel: string;
-}) {
-  const mainActionCount = actionItems.filter((a) => a.priority !== "low").length;
-  const urgentCount = actionItems.filter((a) => a.priority === "high").length;
-  const isCalm =
-    events.length === 0 &&
-    mainActionCount === 0 &&
-    deadlines.length === 0;
-
-  const headline = isCalm
-    ? "You're all clear — enjoy the quiet week."
-    : urgentCount > 0
-    ? `${urgentCount} thing${urgentCount > 1 ? "s" : ""} need${urgentCount === 1 ? "s" : ""} your attention.`
-    : "Things are on track this week.";
-
-  return (
-    <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-primary/60">
-        This week · {weekLabel}
-      </p>
-      <p className="mt-1 text-base font-semibold text-foreground">{headline}</p>
-
-      {!isCalm && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {events.length > 0 && (
-            <span className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs">
-              <CalendarDays className="h-3 w-3 text-primary" />
-              <span className="font-semibold text-foreground">{events.length}</span>
-              <span className="text-muted-foreground">
-                {events.length === 1 ? "event" : "events"}
-              </span>
-            </span>
-          )}
-          {mainActionCount > 0 && (
-            <span
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${
-                urgentCount > 0
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-border bg-card"
-              }`}
-            >
-              <CheckCircle2
-                className={`h-3 w-3 ${urgentCount > 0 ? "text-red-500" : "text-primary"}`}
-              />
-              <span className="font-semibold">{mainActionCount}</span>
-              <span className={urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}>
-                {mainActionCount === 1 ? "action needed" : "actions needed"}
-              </span>
-            </span>
-          )}
-          {deadlines.length > 0 && (
-            <span className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
-              <Clock className="h-3 w-3 text-amber-500" />
-              <span className="font-semibold">{deadlines.length}</span>
-              <span className="text-amber-600">
-                {deadlines.length === 1 ? "deadline" : "deadlines"}
-              </span>
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Action item categorization ─────────────────────────────────────────────
-// Pure frontend classification — runs on already-filtered items.
-// Determines which semantic bucket each action belongs in.
+// Defined early so WeekGlanceCard can use it.
 
 type ActionCategory = "must_do" | "bring_prepare" | "optional";
 
-/** Patterns that indicate a commitment/form/payment action */
 const MUST_DO_PATTERNS: RegExp[] = [
   /\bsign\b/i,
   /\breturn\b/i,
@@ -294,7 +216,6 @@ const MUST_DO_PATTERNS: RegExp[] = [
   /\bcash\b/i,
 ];
 
-/** Patterns that indicate a supply / physical-preparation action */
 const BRING_PREPARE_PATTERNS: RegExp[] = [
   /\bbring\b/i,
   /\bpack(ed)?\b/i,
@@ -322,19 +243,96 @@ const BRING_PREPARE_PATTERNS: RegExp[] = [
   /\bdrink\b/i,
 ];
 
-/**
- * Classify an action item into a semantic bucket.
- * must_do wins over bring_prepare when both match
- * (e.g. "bring and sign permission slip" → must_do).
- * Items with priority "low" (already downgraded by filter.ts) → optional.
- */
 function categorizeAction(item: ActionItemWithChild): ActionCategory {
   if (item.priority === "low") return "optional";
   const task = item.task;
   if (MUST_DO_PATTERNS.some((re) => re.test(task))) return "must_do";
   if (BRING_PREPARE_PATTERNS.some((re) => re.test(task))) return "bring_prepare";
-  // Unmatched high-priority items belong in must_do; others in bring_prepare
   return item.priority === "high" ? "must_do" : "bring_prepare";
+}
+
+// ── Section: Week at a Glance ──────────────────────────────────────────────
+
+function WeekGlanceCard({
+  events,
+  deadlines,
+  actionItems,
+  weekLabel,
+}: {
+  events: EventWithChild[];
+  deadlines: Deadline[];
+  actionItems: ActionItemWithChild[];
+  weekLabel: string;
+}) {
+  const today = todayISO();
+
+  const mustDo  = actionItems.filter((a) => categorizeAction(a) === "must_do");
+  const overdue = actionItems.filter((a) => a.due_date && a.due_date < today);
+  const dueToday = actionItems.filter((a) => a.due_date === today);
+  const totalMain = actionItems.filter((a) => a.priority !== "low").length;
+
+  const isCalm =
+    events.length === 0 && totalMain === 0 && deadlines.length === 0;
+
+  // Nearest upcoming event
+  const nearestEvent = [...events]
+    .filter((e) => e.date && e.date >= today)
+    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))[0] ?? null;
+
+  // Line 1 — the lead sentence
+  let line1: string;
+  if (isCalm) {
+    line1 = "You're all clear — enjoy the quiet week.";
+  } else if (overdue.length > 0) {
+    line1 = `${overdue.length} item${overdue.length > 1 ? "s are" : " is"} overdue — check below.`;
+  } else if (mustDo.length > 0) {
+    line1 = `You have ${mustDo.length} important thing${mustDo.length > 1 ? "s" : ""} to handle this week.`;
+  } else if (totalMain > 0) {
+    line1 = `${totalMain} thing${totalMain > 1 ? "s" : ""} to prepare — nothing urgent.`;
+  } else {
+    line1 = "No actions needed — just some events ahead.";
+  }
+
+  // Line 2 — nearest event with child name
+  let line2: string | null = null;
+  if (nearestEvent) {
+    const cn = nearestEvent.child?.name ?? nearestEvent.raw_child_name;
+    const dayLabel =
+      nearestEvent.date === today
+        ? "today"
+        : nearestEvent.date === shiftDate(1)
+        ? "tomorrow"
+        : formatDate(nearestEvent.date);
+    const title = nearestEvent.title;
+    line2 = cn
+      ? `${cn}'s ${title} is ${dayLabel}.`
+      : `${title} is ${dayLabel}.`;
+  }
+
+  // Line 3 — action status coda
+  let line3: string | null = null;
+  if (!isCalm) {
+    if (dueToday.length > 0) {
+      line3 = `${dueToday.length} item${dueToday.length > 1 ? "s" : ""} due today.`;
+    } else if (mustDo.length === 0 && totalMain === 0) {
+      line3 = "No urgent actions today.";
+    }
+  }
+
+  return (
+    <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-primary/60">
+        This week · {weekLabel}
+      </p>
+      <p className="mt-1.5 text-base font-semibold text-foreground">{line1}</p>
+      {line2 && (
+        <p className="mt-1 text-sm text-muted-foreground">{line2}</p>
+      )}
+      {line3 && (
+        <p className="mt-0.5 text-sm text-muted-foreground">{line3}</p>
+      )}
+    </div>
+  );
 }
 
 /** Sort items: overdue → due soon (≤3d) → coming up → no date, then by priority */
@@ -507,8 +505,10 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
         <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50/60 p-4">
           <PartyPopper className="h-5 w-5 shrink-0 text-green-500" />
           <div>
-            <p className="text-sm font-semibold text-green-800">All caught up!</p>
-            <p className="text-xs text-green-600 mt-0.5">No actions pending. Well done.</p>
+            <p className="text-sm font-semibold text-green-800">Nothing to do right now.</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              When school emails arrive, we'll surface any forms, payments, or items to prepare.
+            </p>
           </div>
         </div>
       ) : (
@@ -562,170 +562,173 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   );
 }
 
-// ── Section: This Week ─────────────────────────────────────────────────────
+// ── Section: This Week (grouped by child) ──────────────────────────────────
 
 function ThisWeekSection({
   events,
   deadlines,
+  registeredChildren,
 }: {
   events: EventWithChild[];
   deadlines: Deadline[];
+  registeredChildren: Child[];
 }) {
   const today = todayISO();
 
-  type WeekItem =
-    | { kind: "event"; date: string | null; item: EventWithChild }
-    | { kind: "deadline"; date: string | null; item: Deadline };
+  // Build per-child groups, preserving known-child order
+  type ChildGroup = {
+    id: string;
+    name: string;
+    events: EventWithChild[];
+    deadlines: Deadline[];
+  };
 
-  const allItems: WeekItem[] = [
-    ...events.map((e) => ({ kind: "event" as const, date: e.date, item: e })),
-    ...deadlines.map((d) => ({
-      kind: "deadline" as const,
-      date: d.date,
-      item: d,
-    })),
-  ].sort((a, b) => {
-    if (!a.date && !b.date) return 0;
-    if (!a.date) return 1;
-    if (!b.date) return -1;
-    return a.date.localeCompare(b.date);
-  });
+  const groups = new Map<string, ChildGroup>();
 
-  if (allItems.length === 0) {
-    return (
-      <section className="mb-8">
-        <SectionHeading
-          icon={<CalendarDays className="h-4 w-4" />}
-          label="This Week"
-        />
-        <EmptyState
-          icon={<CalendarX className="h-8 w-8" />}
-          heading="Nothing on the calendar this week"
-          sub="Events from forwarded school emails will appear here."
-        />
-      </section>
-    );
+  // Seed with registered children so their order is stable
+  for (const child of registeredChildren) {
+    groups.set(child.id, { id: child.id, name: child.name, events: [], deadlines: [] });
   }
 
-  // Group by date key
-  type GroupEntry = { label: string; isToday: boolean; items: WeekItem[] };
-  const grouped = new Map<string, GroupEntry>();
-  for (const wi of allItems) {
-    const key = wi.date ?? "no-date";
-    const isToday = wi.date === today;
-    if (!grouped.has(key)) {
-      grouped.set(key, { label: formatDate(wi.date), isToday, items: [] });
+  for (const ev of events) {
+    const key = ev.child_id ?? "__other";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key,
+        name: ev.child?.name ?? ev.raw_child_name ?? "School",
+        events: [],
+        deadlines: [],
+      });
     }
-    grouped.get(key)!.items.push(wi);
+    groups.get(key)!.events.push(ev);
   }
+
+  for (const dl of deadlines) {
+    const key = dl.child_id ?? "__other";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key,
+        name: dl.raw_child_name ?? "School",
+        events: [],
+        deadlines: [],
+      });
+    }
+    groups.get(key)!.deadlines.push(dl);
+  }
+
+  // Only show groups that have something this week
+  const activeGroups = [...groups.values()].filter(
+    (g) => g.events.length > 0 || g.deadlines.length > 0
+  );
+
+  // Sort each group's items chronologically
+  for (const g of activeGroups) {
+    g.events.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+    g.deadlines.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  }
+
+  const totalCount = activeGroups.reduce(
+    (s, g) => s + g.events.length + g.deadlines.length,
+    0
+  );
 
   return (
     <section className="mb-8">
       <SectionHeading
         icon={<CalendarDays className="h-4 w-4" />}
         label="This Week"
-        count={allItems.length}
+        count={totalCount > 0 ? totalCount : undefined}
       />
-      <div className="space-y-5">
-        {[...grouped.values()].map(({ label, isToday, items }) => (
-          <div key={label}>
-            {/* Day header */}
-            <div className="mb-2 flex items-center gap-2">
-              <p
-                className={`text-xs font-semibold uppercase tracking-wide ${
-                  isToday ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                {label}
-              </p>
-              {isToday && (
-                <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">
-                  Today
-                </span>
-              )}
-            </div>
 
-            <div className="space-y-2">
-              {items.map((row) =>
-                row.kind === "event" ? (
-                  <Card
-                    key={row.item.id}
-                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
-                      isToday ? "border-primary/25 bg-primary/5" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <CalendarDays
-                        className={`h-3.5 w-3.5 shrink-0 ${
-                          isToday ? "text-primary" : "text-muted-foreground"
-                        }`}
-                      />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {row.item.title}
-                        </p>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          {row.item.start_time && (
-                            <span className="text-xs text-muted-foreground">
-                              {formatTime(row.item.start_time)}
-                              {row.item.end_time
-                                ? ` – ${formatTime(row.item.end_time)}`
-                                : ""}
-                            </span>
-                          )}
-                          {row.item.location && (
-                            <span className="text-xs text-muted-foreground">
-                              · {row.item.location}
-                            </span>
-                          )}
-                          <ChildTag
-                            name={
-                              row.item.child?.name ?? row.item.raw_child_name
-                            }
-                          />
+      {activeGroups.length === 0 ? (
+        <EmptyState
+          icon={<CalendarX className="h-8 w-8" />}
+          heading="Nothing on the calendar this week"
+          sub="Events and deadlines will appear here once school emails arrive."
+        />
+      ) : (
+        <div className="space-y-6">
+          {activeGroups.map((group) => (
+            <div key={group.id}>
+              {/* Child name row */}
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-primary">
+                {group.name}
+              </p>
+
+              <div className="space-y-2">
+                {group.events.map((ev) => {
+                  const isToday = ev.date === today;
+                  return (
+                    <Card
+                      key={ev.id}
+                      className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                        isToday ? "border-primary/25 bg-primary/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <CalendarDays
+                          className={`h-3.5 w-3.5 shrink-0 ${
+                            isToday ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {ev.title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {formatDate(ev.date)}
+                            {ev.start_time ? ` · ${formatTime(ev.start_time)}` : ""}
+                            {ev.end_time ? ` – ${formatTime(ev.end_time)}` : ""}
+                            {ev.location ? ` · ${ev.location}` : ""}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                    <Link
-                      href={`/emails/${row.item.source_email_id}`}
-                      className="shrink-0 text-muted-foreground/40 hover:text-primary"
+                      <Link
+                        href={`/emails/${ev.source_email_id}`}
+                        className="shrink-0 text-muted-foreground/40 hover:text-primary"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    </Card>
+                  );
+                })}
+
+                {group.deadlines.map((dl) => {
+                  const isToday = dl.date === today;
+                  return (
+                    <Card
+                      key={dl.id}
+                      className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                        isToday
+                          ? "border-amber-300 bg-amber-50/50"
+                          : "border-amber-200 bg-amber-50/20"
+                      }`}
                     >
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </Card>
-                ) : (
-                  <Card
-                    key={row.item.id}
-                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
-                      isToday
-                        ? "border-amber-300 bg-amber-50/50"
-                        : "border-amber-200 bg-amber-50/20"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Clock className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {row.item.title}
-                        </p>
-                        <p className="text-xs text-amber-600">
-                          {isToday ? "Due today" : "Deadline"}
-                        </p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {dl.title}
+                          </p>
+                          <p className="text-xs text-amber-600">
+                            {isToday ? "Due today" : `Due ${formatDate(dl.date)}`}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <Link
-                      href={`/emails/${row.item.source_email_id}`}
-                      className="shrink-0 text-muted-foreground/40 hover:text-primary"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </Card>
-                )
-              )}
+                      <Link
+                        href={`/emails/${dl.source_email_id}`}
+                        className="shrink-0 text-muted-foreground/40 hover:text-primary"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1261,6 +1264,7 @@ export default function DashboardPage() {
           <ThisWeekSection
             events={data.events}
             deadlines={data.deadlines}
+            registeredChildren={children}
           />
 
           <ByChildSection
