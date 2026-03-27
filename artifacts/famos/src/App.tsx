@@ -22,6 +22,7 @@ import EmailDetailPage  from "@/pages/emails/email-detail";
 import GmailForwardingPage from "@/pages/setup/gmail-forwarding";
 import TryPage            from "@/pages/try";
 import TestEmailPage    from "@/pages/dev/test-email";
+import DevLoginPage     from "@/pages/dev/login";
 import NotFound         from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -71,7 +72,7 @@ function Router() {
   const [location] = useLocation();
 
   // Redirect authenticated users away from public-only pages
-  if (!loading && user && (location === "/login" || location === "/")) {
+  if (!loading && user && (location === "/login" || location === "/" || location === "/dev/login")) {
     return <Redirect to="/dashboard" />;
   }
 
@@ -103,7 +104,8 @@ function Router() {
         <ProtectedRoute component={TryPage} />
       </Route>
 
-      {/* Dev tools — requires auth + dev-user access */}
+      {/* Dev tools */}
+      <Route path="/dev/login" component={DevLoginPage} />
       <Route path="/dev/test-email">
         <DevRoute component={TestEmailPage} />
       </Route>
