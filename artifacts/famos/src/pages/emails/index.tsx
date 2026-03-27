@@ -5,7 +5,7 @@
  * Each row links to /emails/:id for full detail and re-run.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { Shell } from "@/components/layout/Shell";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -17,12 +17,18 @@ import {
   Clock,
   Inbox,
   Users,
-  FlaskConical,
+  Sparkles,
+  Forward,
   Settings,
+  Copy,
+  Check,
 } from "lucide-react";
+
 import { getEmails, getChildren } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
 import type { Email } from "@/types/database";
+
+const INBOUND_ADDRESS = "inbox@famops.app";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -151,6 +157,15 @@ function ListSkeleton() {
 // ── Empty state ───────────────────────────────────────────────────────────
 
 function EmptyState({ hasChildren }: { hasChildren: boolean }) {
+  const [showForward, setShowForward] = useState(false);
+  const [copied,      setCopied]      = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(INBOUND_ADDRESS);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (!hasChildren) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
@@ -171,29 +186,65 @@ function EmptyState({ hasChildren }: { hasChildren: boolean }) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
-      <Inbox className="mb-4 h-10 w-10 text-muted-foreground/30" />
-      <p className="text-sm font-semibold text-foreground">No emails yet</p>
-      <p className="mt-1.5 text-sm text-muted-foreground/80 max-w-sm">
-        Paste a school email to try FamOS instantly, or set up forwarding so
-        emails flow in automatically.
-      </p>
-      <div className="mt-5 flex flex-wrap justify-center gap-3">
-        <Link
-          href="/dev/test-email"
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-        >
-          <FlaskConical className="h-4 w-4" />
-          Try it with a school email
-        </Link>
-        <Link
-          href="/setup/gmail-forwarding"
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-        >
-          <Settings className="h-4 w-4" />
-          Set up Gmail forwarding
-        </Link>
+    <div className="rounded-xl border border-dashed border-border bg-muted/30 px-6 py-12">
+      <div className="flex flex-col items-center text-center">
+        <Inbox className="mb-4 h-10 w-10 text-muted-foreground/30" />
+        <p className="text-sm font-semibold text-foreground">No emails yet</p>
+        <p className="mt-1.5 text-sm text-muted-foreground/80 max-w-sm">
+          Paste a school email to try FamOS instantly, forward one to see it appear
+          automatically, or set up full auto-forwarding.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          <Link
+            href="/try"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <Sparkles className="h-4 w-4" />
+            Paste a school email
+          </Link>
+          <button
+            onClick={() => setShowForward((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          >
+            <Forward className="h-4 w-4" />
+            Forward one email
+          </button>
+          <Link
+            href="/setup/gmail-forwarding"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          >
+            <Settings className="h-4 w-4" />
+            Set up auto-forwarding
+          </Link>
+        </div>
       </div>
+
+      {showForward && (
+        <div className="mt-6 mx-auto max-w-sm rounded-xl border border-primary/20 bg-primary/5 p-4 text-left">
+          <p className="text-sm font-semibold text-foreground mb-1">
+            Forward any school email to this address
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Open a school email in Gmail, click Forward, and send it here.
+            It'll appear on your dashboard within a few minutes.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-mono text-sm font-semibold text-foreground bg-background border border-border rounded-lg px-3 py-2">
+              {INBOUND_ADDRESS}
+            </span>
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {copied ? (
+                <><Check className="h-3.5 w-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+              ) : (
+                <><Copy className="h-3.5 w-3.5" />Copy address</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
