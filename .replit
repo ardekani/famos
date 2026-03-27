@@ -33,5 +33,5 @@ channel = "stable-25_05"
 [userenv.shared]
 RESEND_FROM_EMAIL = "FamOS <noreply@mail.famops.app>"
 CRON_SECRET = "e96966f8e9a2c82002c9c6d1273b3b962af1b29da969bd64e30db5d2df8dcf1e"
-VITE_DEV_EMAILS = "flints_tilbury.9r@icloud.com"
-DEV_EMAILS = "flints_tilbury.9r@icloud.com"
+VITE_DEV_EMAILS = "re.ardekani@icloud.com"
+DEV_EMAILS = "re.ardekani@icloud.com"
