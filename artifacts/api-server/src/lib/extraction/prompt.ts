@@ -27,6 +27,7 @@ Rules:
 7. Avoid duplication across categories.
 8. If an email is informational only, it may return empty arrays or notes only.
 9. Output valid JSON only. No prose, no markdown.
+10. ALWAYS create an event entry for any school event, trip, performance, ceremony, or activity that has a date — even if the email also generates action items. The event and its action items are separate: the event goes in "events", parent tasks go in "action_items".
 
 Expected output shape:
 {
