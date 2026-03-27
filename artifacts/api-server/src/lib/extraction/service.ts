@@ -22,6 +22,7 @@ import OpenAI from "openai";
 import { logger } from "../logger.js";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateExtractionOutput } from "./validate.js";
+import { filterActionItems } from "./filter.js";
 import type {
   ChildRef,
   ExtractionServiceResult,
@@ -259,13 +260,26 @@ export async function extractFromEmail(
     "Extraction validated"
   );
 
-  // ── 3. Resolve child names to IDs ──────────────────────────────────────
+  // ── 3. Post-process: filter noisy action items ─────────────────────────
+
+  const filtered = filterActionItems(raw);
+
+  log.info(
+    {
+      action_items_before: raw.action_items.length,
+      action_items_after:  filtered.action_items.length,
+      notes_added:         filtered.notes.length - raw.notes.length,
+    },
+    "Action item filtering complete"
+  );
+
+  // ── 4. Resolve child names to IDs ──────────────────────────────────────
 
   const resolved: ResolvedExtractionResult = {
-    events:       resolveEvents(raw.events, children),
-    deadlines:    resolveDeadlines(raw.deadlines, children),
-    action_items: resolveActionItems(raw.action_items, children),
-    notes:        resolveNotes(raw.notes, children),
+    events:       resolveEvents(filtered.events, children),
+    deadlines:    resolveDeadlines(filtered.deadlines, children),
+    action_items: resolveActionItems(filtered.action_items, children),
+    notes:        resolveNotes(filtered.notes, children),
   };
 
   return { success: true, data: resolved };

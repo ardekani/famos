@@ -1,0 +1,141 @@
+Improve the Family School OS extraction and dashboard behavior so Action Needed only contains high-value parent actions, not every instructional sentence from a school email.
+
+Core product problem:
+Right now the app is over-generating action items. It turns many email details into “actions” even when they are better represented as event details or notes. This creates noise and reduces trust.
+
+Examples of current low-value actions we should avoid or downgrade:
+- “Ensure Emma arrives at 5:30 PM”
+- “Have Emma wear performance attire”
+- “Ensure Noah arrives at 6:00 PM”
+
+These should usually NOT be primary action items.
+
+Desired product behavior:
+The app should surface only the actions that a parent would most likely forget and that would actually matter if missed.
+
+Examples of high-value actions to keep:
+- sign and return permission slip
+- submit emergency/contact/media forms
+- bring packed lunch
+- bring swimsuit / towel / water bottle
+- send snacks
+- RSVP or volunteer if explicitly requested and materially important
+
+Examples that should usually become event metadata or notes instead of action items:
+- arrival times for a concert or event
+- dress code / performance attire
+- informational reminders attached to an event
+- generic “please let us know if you have questions”
+- chaperone volunteering unless clearly required
+
+Goals for this task:
+1. Improve extraction prompt/instructions for action_items
+2. Add a light post-processing / ranking layer after extraction
+3. Improve dashboard prioritization and grouping
+4. Preserve the current overall architecture and OpenAI-based extraction pipeline
+5. Do not over-refactor unrelated parts of the app
+
+Implementation requirements:
+
+PART 1 — Improve extraction prompt
+Update the OpenAI extraction prompt so that action_items are defined more narrowly.
+
+New guidance for action_items:
+- Only create an action item if it is a concrete parent/caregiver task whose omission could realistically cause a missed requirement, missed deadline, or problem for the child.
+- Prefer to put schedule details, arrival times, attire requirements, and general event instructions into event description/details or notes instead of action_items.
+- If an email contains event logistics, do not automatically convert every logistic detail into a task.
+- If uncertain, prefer fewer action_items, not more.
+- Avoid turning generic reminders into tasks unless there is a clear required action.
+- Maintain valid structured JSON output.
+
+Please update the extraction instructions accordingly.
+
+PART 2 — Add post-extraction filtering / scoring
+After OpenAI returns structured output, add a lightweight rule-based filtering/scoring layer for action_items.
+
+Add a derived classification such as:
+- must_do
+- helpful
+- informational
+
+Or an equivalent internal ranking system.
+
+Suggested heuristics:
+Promote / keep high:
+- contains words like sign, submit, return, complete, bring, send, RSVP, pay
+- tied to explicit due dates or deadlines
+- tied to required forms or supplies
+
+Downgrade or suppress:
+- “arrive at”
+- “be at”
+- “wear”
+- “should arrive”
+- “should wear”
+- generic informational event logistics
+- vague reminders without a clear user action
+
+Do this conservatively:
+- better to suppress noisy actions than to show too many
+- if suppressed, try to preserve the detail somewhere useful (event description or notes)
+
+PART 3 — Improve dashboard action prioritization
+Update dashboard behavior so Action Needed is more trusted and less overwhelming.
+
+Requirements:
+1. Only show high-value action items in the main Action Needed section by default
+2. Group action items by urgency, for example:
+   - Needs attention now
+   - Coming up
+   - Optional / lower priority (if shown at all)
+3. Sort by:
+   - overdue first
+   - due soon next
+   - higher-value actions before lower-value ones
+4. If there are many low-value extracted actions, do not let them dominate the dashboard
+5. Keep the dashboard calm and parent-friendly
+
+PART 4 — Move suppressed actions into better places
+If an extracted action is filtered out of Action Needed, do not just drop important context blindly.
+
+Preferred alternatives:
+- event description/details
+- a “What to know” / notes area on the event or email detail page
+- lower-priority informational section if already available
+
+Examples:
+- “Emma should arrive at 5:30 PM” -> event detail
+- “Wear white shirt and black pants” -> event detail or note
+- “Let us know if you have questions” -> ignore
+
+PART 5 — Child labeling / clarity
+If the dashboard currently shows weak child labels like internal test names or subtle pills, improve visibility of child identity in action and weekly views.
+Make the child name easier to scan.
+
+PART 6 — Testing / examples
+Please test the new behavior against realistic examples like:
+- field trip with permission slip, lunch, shoes, water bottle
+- spring concert with separate arrival times and performance attire
+- forms due this week
+- pajama day
+- vague informational emails
+
+Expected outcomes:
+- permission slip stays as action
+- packed lunch may stay as action
+- walking shoes may be downgraded or optional
+- arrival times become event details, not actions
+- performance attire becomes event detail or note, not action
+
+Important constraints:
+- Keep using OpenAI for extraction
+- Do not rewrite the whole pipeline
+- Do not make unrelated UI changes
+- Keep changes focused and minimal
+- Preserve current multi-user safety and existing architecture
+
+At the end, show me:
+1. what prompt changes you made
+2. what post-processing rules you added
+3. what dashboard logic changed
+4. before/after examples for at least 2 sample emails

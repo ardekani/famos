@@ -164,7 +164,7 @@ function Card({
 function ChildTag({ name }: { name: string | null | undefined }) {
   if (!name) return null;
   return (
-    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
       {name}
     </span>
   );
@@ -201,10 +201,11 @@ function WeekGlanceCard({
   actionItems: ActionItemWithChild[];
   weekLabel: string;
 }) {
+  const mainActionCount = actionItems.filter((a) => a.priority !== "low").length;
   const urgentCount = actionItems.filter((a) => a.priority === "high").length;
   const isCalm =
     events.length === 0 &&
-    actionItems.length === 0 &&
+    mainActionCount === 0 &&
     deadlines.length === 0;
 
   const headline = isCalm
@@ -231,7 +232,7 @@ function WeekGlanceCard({
               </span>
             </span>
           )}
-          {actionItems.length > 0 && (
+          {mainActionCount > 0 && (
             <span
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${
                 urgentCount > 0
@@ -242,9 +243,9 @@ function WeekGlanceCard({
               <CheckCircle2
                 className={`h-3 w-3 ${urgentCount > 0 ? "text-red-500" : "text-primary"}`}
               />
-              <span className="font-semibold">{actionItems.length}</span>
+              <span className="font-semibold">{mainActionCount}</span>
               <span className={urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}>
-                {actionItems.length === 1 ? "action needed" : "actions needed"}
+                {mainActionCount === 1 ? "action needed" : "actions needed"}
               </span>
             </span>
           )}
@@ -265,9 +266,103 @@ function WeekGlanceCard({
 
 // ── Section: Action Needed ─────────────────────────────────────────────────
 
+function ActionRow({
+  item,
+  today,
+  onComplete,
+}: {
+  item: ActionItemWithChild;
+  today: string;
+  onComplete: (id: string) => void;
+}) {
+  const isHigh = item.priority === "high";
+  const isOverdue = item.due_date ? item.due_date < today : false;
+  const isDueToday = item.due_date === today;
+
+  return (
+    <div
+      className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
+        isOverdue
+          ? "border-red-200 bg-red-50/40"
+          : isHigh
+          ? "border-orange-200 bg-orange-50/30"
+          : "border-border bg-card"
+      }`}
+    >
+      <button
+        onClick={() => onComplete(item.id)}
+        className="mt-0.5 shrink-0 text-muted-foreground/40 transition-colors hover:text-green-600"
+        aria-label="Mark as done"
+      >
+        <Circle className="h-4 w-4" />
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 mb-0.5">
+          <ChildTag name={item.child?.name ?? item.raw_child_name} />
+        </div>
+        <p
+          className={`text-sm text-foreground leading-snug ${
+            isHigh || isOverdue ? "font-semibold" : "font-medium"
+          }`}
+        >
+          {item.task}
+        </p>
+        {item.due_date && (
+          <p
+            className={`mt-1 text-xs font-medium ${
+              isOverdue
+                ? "text-red-600"
+                : isDueToday
+                ? "text-amber-600"
+                : "text-muted-foreground"
+            }`}
+          >
+            {isOverdue ? "Overdue · " : ""}Due {formatDate(item.due_date)}
+          </p>
+        )}
+      </div>
+
+      <Link
+        href={`/emails/${item.source_email_id}`}
+        className="mt-0.5 shrink-0 text-muted-foreground/30 transition-colors hover:text-primary"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Link>
+    </div>
+  );
+}
+
+function ActionGroup({
+  label,
+  labelClass,
+  items,
+  today,
+  onComplete,
+}: {
+  label: string;
+  labelClass: string;
+  items: ActionItemWithChild[];
+  today: string;
+  onComplete: (id: string) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <p className={`text-[11px] font-semibold uppercase tracking-wide ${labelClass}`}>
+        {label}
+      </p>
+      {items.map((item) => (
+        <ActionRow key={item.id} item={item} today={today} onComplete={onComplete} />
+      ))}
+    </div>
+  );
+}
+
 function ActionSection({ items }: { items: ActionItemWithChild[] }) {
   const queryClient = useQueryClient();
   const [optimisticDone, setOptimisticDone] = useState<Set<string>>(new Set());
+  const [showOptional, setShowOptional] = useState(false);
   const { user } = useAuth();
 
   const mutation = useMutation({
@@ -282,20 +377,37 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
     mutation.mutate(id);
   };
 
-  const visible = items.filter((i) => !optimisticDone.has(i.id));
-  const high = visible.filter((i) => i.priority === "high");
-  const rest = visible.filter((i) => i.priority !== "high");
-  const sorted = [...high, ...rest];
   const today = todayISO();
+  const dueSoon = shiftDate(3); // within 3 days = "soon"
+
+  const visible = items.filter((i) => !optimisticDone.has(i.id));
+
+  // Split main (high/medium) from optional (low)
+  const main = visible.filter((i) => i.priority !== "low");
+  const optional = visible.filter((i) => i.priority === "low");
+
+  // Sort helper: high before medium within a group
+  const byPriority = (a: ActionItemWithChild, b: ActionItemWithChild) => {
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    return rank[a.priority] - rank[b.priority];
+  };
+
+  // Group main items by urgency
+  const overdue  = main.filter((i) => i.due_date && i.due_date < today).sort(byPriority);
+  const duesoon  = main.filter((i) => i.due_date && i.due_date >= today && i.due_date <= dueSoon).sort(byPriority);
+  const coming   = main.filter((i) => i.due_date && i.due_date > dueSoon).sort(byPriority);
+  const nodate   = main.filter((i) => !i.due_date).sort(byPriority);
+
+  const totalMain = main.length;
 
   return (
     <section className="mb-8">
       <SectionHeading
         icon={<CheckCircle2 className="h-4 w-4" />}
         label="Action Needed"
-        count={sorted.length}
+        count={totalMain}
       />
-      {sorted.length === 0 ? (
+      {totalMain === 0 && optional.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50/60 p-4">
           <PartyPopper className="h-5 w-5 shrink-0 text-green-500" />
           <div>
@@ -306,63 +418,64 @@ function ActionSection({ items }: { items: ActionItemWithChild[] }) {
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {sorted.map((item) => {
-            const isHigh = item.priority === "high";
-            const isOverdue = item.due_date ? item.due_date < today : false;
-            const isDueToday = item.due_date === today;
-            return (
-              <div
-                key={item.id}
-                className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
-                  isHigh
-                    ? "border-red-200 bg-red-50/40"
-                    : "border-border bg-card"
-                }`}
+        <div className="space-y-4">
+          <ActionGroup
+            label="Overdue"
+            labelClass="text-red-500"
+            items={overdue}
+            today={today}
+            onComplete={handleComplete}
+          />
+          <ActionGroup
+            label="Due soon"
+            labelClass="text-amber-600"
+            items={duesoon}
+            today={today}
+            onComplete={handleComplete}
+          />
+          <ActionGroup
+            label="Coming up"
+            labelClass="text-muted-foreground"
+            items={coming}
+            today={today}
+            onComplete={handleComplete}
+          />
+          <ActionGroup
+            label="To do"
+            labelClass="text-muted-foreground"
+            items={nodate}
+            today={today}
+            onComplete={handleComplete}
+          />
+
+          {/* Optional / lower priority — collapsed by default */}
+          {optional.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowOptional((v) => !v)}
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/60 hover:text-muted-foreground transition-colors"
               >
-                <button
-                  onClick={() => handleComplete(item.id)}
-                  className="mt-0.5 shrink-0 text-muted-foreground/40 transition-colors hover:text-green-600"
-                  aria-label="Mark as done"
-                >
-                  <Circle className="h-4 w-4" />
-                </button>
-
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm text-foreground leading-snug ${
-                      isHigh ? "font-semibold" : "font-medium"
-                    }`}
-                  >
-                    {item.task}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    {item.due_date && (
-                      <span
-                        className={`text-xs font-medium ${
-                          isOverdue
-                            ? "text-red-600"
-                            : isDueToday
-                            ? "text-amber-600"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {isOverdue ? "Overdue · " : ""}Due {formatDate(item.due_date)}
-                      </span>
-                    )}
-                    <ChildTag name={item.child?.name ?? item.raw_child_name} />
-                  </div>
+                {showOptional ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+                Optional · {optional.length}
+              </button>
+              {showOptional && (
+                <div className="mt-2 space-y-2">
+                  {optional.map((item) => (
+                    <ActionRow
+                      key={item.id}
+                      item={item}
+                      today={today}
+                      onComplete={handleComplete}
+                    />
+                  ))}
                 </div>
-
-                <Link
-                  href={`/emails/${item.source_email_id}`}
-                  className="mt-0.5 shrink-0 text-muted-foreground/30 transition-colors hover:text-primary"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Link>
-              </div>
-            );
-          })}
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>
